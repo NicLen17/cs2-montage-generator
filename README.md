@@ -8,9 +8,13 @@ Dejás tus clips de Twitch y una canción, escribís `/cs2-edit hacé un edit`, 
 
 ▶️ **[Ver el edit completo en YouTube](https://youtu.be/ZxsmGS2iv9Q)**
 
-| Segundo drop (ráfaga de un ACE, una kill por golpe) | Miniatura generada por `yt-publish` |
+| Segundo drop (ráfaga de un ACE, una kill por golpe) | Miniatura generada por `yt-publish` (tipo `jugada`) |
 |---|---|
 | ![Vista previa del edit](docs/preview.gif) | ![Miniatura de ejemplo](docs/thumbnail_example.jpg) |
+
+Los tres tipos de miniatura que genera `yt-publish` (`jugada`, `reaccion`, `limpia`), vistos al tamaño del celular. Salen del análisis de las miniaturas más vistas de canales de CS con éxito ([referencias](.claude/skills/yt-publish/references/miniaturas.md)):
+
+![Tipos de miniatura](docs/thumbnail_tipos.jpg)
 
 Lo que hace el proyecto en cada video:
 - **Música:** encuentra el BPM, el onset real de cada golpe (no el beat estimado), los drops, el corte de batería y los golpes de voz. Separa voz y música con Demucs.
@@ -94,7 +98,7 @@ Claude ubica cada minuto con `engine/locate.py` (qué clip, qué kill, qué tran
 
 ### Después del edit
 - **Short vertical** para TikTok, Reels o Shorts: `hacé un short de este edit` → `output/<nombre>_short.mp4` (1080×1920). Elige solo el tramo con mejor gancho, sin cortar plays.
-- **Paquete para YouTube:** `prepará la subida` → miniatura 1280×720, títulos, descripción con capítulos válidos y tags en `projects/<nombre>/publish/`. No sube nada.
+- **Paquete para YouTube:** `prepará la subida` → miniaturas 1280×720 en tres estilos (la jugada con la cámara del streamer, la reacción en grande, o un cuadro limpio), títulos, descripción con capítulos válidos y tags en `projects/<nombre>/publish/`. No sube nada.
 - **Estilo de otro edit:** adjuntá un edit **descargado** y pedí `hacé uno así` → mide cortes, sincronía, transiciones, efectos y color, y los aplica a tus clips.
 
 ## Skills del proyecto
