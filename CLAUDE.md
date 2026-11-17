@@ -23,13 +23,16 @@ Seguí el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md` de punta a p
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
 7. Render final (en segundo plano): `python engine/build.py projects/<nombre>` → `output/<nombre>.mp4`.
    Al terminar corre solo `check_render.py` y lo guarda en `projects/<nombre>/check_render.txt`: leelo.
-8. Revisiones: `python engine/locate.py projects/<nombre> 1:23,2:05` traduce los minutos que marca el usuario a clip,
+8. Paquete completo (skill `cs2-pack`): `python engine/short.py projects/<nombre> --count auto --dur 35`, miniatura y textos
+   con `yt-publish`, `publish/redes.md`, y `python engine/pack.py projects/<nombre>` → `output/<nombre>_pack/`.
+9. Revisiones: `python engine/locate.py projects/<nombre> 1:23,2:05` traduce los minutos que marca el usuario a clip,
    kill y transición, con tiras de cuadros en `projects/<nombre>/insp/`.
 
 ## Skills del proyecto
 | Skill | Cuándo |
 |---|---|
 | `cs2-edit` | **Por defecto.** Siempre que haya clips + canción, "hacé un edit", o cambios a un edit ya hecho. |
+| `cs2-pack` | **Todo en uno** (`/cs2-pack`, "hacé todo", "el paquete completo"): edit + 2-4 shorts + miniatura + textos de YouTube y redes, en `output/<nombre>_pack/`. Encadena las demás skills. |
 | `clip-catalog` | Elegir plays, ver qué clips ya se usaron o están verificados, cargar clips nuevos. Lo usa `cs2-edit`. |
 | `cs2-short` | Short vertical 9:16 (TikTok, Reels, Shorts) a partir de un edit terminado. |
 | `yt-publish` | Miniatura, título, descripción con capítulos y tags para subir un edit a YouTube. |

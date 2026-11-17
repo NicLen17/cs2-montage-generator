@@ -3,6 +3,7 @@
     python engine/short.py projects/<nombre>                       -> elige solo el mejor tramo (~45 s) y renderiza
     python engine/short.py projects/<nombre> --list                -> solo muestra los tramos candidatos con su puntaje
     python engine/short.py projects/<nombre> --start 1:52 --dur 40 -> tramo fijo
+    python engine/short.py projects/<nombre> --count auto --dur 35 -> varios shorts que no se pisan (2 a 4): <nombre>_short1.mp4, ...
     opciones: --dur 45  --layout fit|cam  --video output/x.mp4  --name x_short.mp4  --no-text
 
 Toma la imagen y el audio del video final (output/<nombre>.mp4), así que conserva efectos, sincronía y mezcla.
@@ -11,9 +12,11 @@ Toma la imagen y el audio del video final (output/<nombre>.mp4), así que conser
   cam: cámara del streamer arriba (zoom 2x, el máximo permitido) y el centro del gameplay abajo a tamaño real.
        Solo sirve si en todo el tramo la cámara está en la posición por defecto (25,18)-(490,278).
 El tramo empieza después de una transición y termina antes de la siguiente; nunca corta una play por la mitad.
-Salida: output/<nombre>_short.mp4 (1080x1920, 60 fps) y projects/<nombre>/short_sheet.jpg para revisarlo.
+Salida: output/<nombre>_short.mp4 (o _short1, _short2... con --count) a 1080x1920 y 60 fps, una hoja por short en
+projects/<nombre>/ y projects/<nombre>/shorts.json con tramos, kills y títulos de cada uno.
 """
-import os, sys, argparse, subprocess, importlib.util, io, contextlib
+import os, sys, json, argparse, subprocess, importlib.util, io, contextlib
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -98,29 +101,61 @@ def main():
     ap.add_argument('project'); ap.add_argument('--start'); ap.add_argument('--dur', type=float, default=45.0)
     ap.add_argument('--layout', default='fit', choices=['fit', 'cam']); ap.add_argument('--video'); ap.add_argument('--name')
     ap.add_argument('--list', action='store_true'); ap.add_argument('--no-text', action='store_true')
+    ap.add_argument('--count', default='1', help="cantidad de shorts sin pisarse, o 'auto' (2 a 4, los buenos)")
     a = ap.parse_args()
     project = os.path.abspath(a.project); name = os.path.basename(project); p = load_plan(project)
     video = a.video or os.path.join(ROOT, 'output', name + '.mp4')
     if not os.path.exists(video): raise SystemExit(f'No existe {video}: renderizá primero el edit (engine/build.py).')
 
     if a.start:
-        t0 = parse_t(a.start); t1 = min(p.TOTAL, t0 + a.dur)
+        picks = [dict(a=parse_t(a.start), e=min(p.TOTAL, parse_t(a.start) + a.dur), kills=0, caps=0)]
     else:
         cs = candidates(p, a.dur)
         if not cs: raise SystemExit('No encontré un tramo que empiece y termine en límites de play; usá --start y --dur.')
         print('Tramos candidatos (mejor primero):')
-        for c in cs[:6]:
+        for c in cs[:8]:
             print(f'  {fmt(c["a"])} → {fmt(c["e"])}  ({c["e"] - c["a"]:.1f} s)  kills={c["kills"]}  títulos={c["caps"]}  '
                   f'primera kill a {c["hook"]:.1f} s{"  arranca en drop" if c["drop"] else ""}  puntaje={c["score"]:.1f}')
-        if a.list: return
-        t0, t1 = cs[0]['a'], cs[0]['e']
+        picks = pick_shorts(cs, a.count)
+        if a.list:
+            print('Se elegirían:', ', '.join(f'{fmt(c["a"])}-{fmt(c["e"])}' for c in picks)); return
+    multi = len(picks) > 1 or a.count != '1'
+    jobs = []
+    for i, c in enumerate(picks, 1):          # short1 = el de mejor puntaje (el primero que conviene publicar)
+        suf = f'_short{i}' if multi else '_short'
+        out = os.path.join(ROOT, 'output', a.name if (a.name and not multi) else f'{name}{suf}.mp4')
+        sheet = os.path.join(project, f'short{i if multi else ""}_sheet.jpg')
+        jobs.append((c, out, sheet))
+    def run(job):
+        c, out, sheet = job
+        return render_short(p, project, video, c['a'], c['e'], a.layout, not a.no_text, out, sheet)
+    with ThreadPoolExecutor(min(3, len(jobs))) as ex:
+        res = list(ex.map(run, jobs))
+    info = [dict(n=i + 1, desde=fmt(c['a']), hasta=fmt(c['e']), dur=round(d, 1), kills=c.get('kills'), titulos=[cp for o, cp in p.captions if c['a'] <= o <= c['e']],
+                 archivo=out, hoja=sheet) for i, ((c, out, sheet), d) in enumerate(zip(jobs, res))]
+    json.dump(info, open(os.path.join(project, 'shorts.json'), 'w', encoding='utf-8'), indent=1, ensure_ascii=False, default=str)
+    print(f'\n{len(info)} short(s). Detalle en {os.path.join(project, "shorts.json")}')
+
+
+def pick_shorts(cs, count):
+    """Elige tramos que no se pisan entre sí. count: un número, o 'auto' (los buenos: puntaje >= 60 % del mejor, 2 a 4)."""
+    chosen = []
+    for c in cs:
+        if all(c['e'] <= o['a'] or c['a'] >= o['e'] for o in chosen): chosen.append(c)
+    if count == 'auto':
+        best = chosen[0]['score']
+        good = [c for c in chosen if c['score'] >= 0.6 * best][:4]
+        return good if len(good) >= 2 else chosen[:2]
+    return chosen[:max(1, int(count))]
+
+
+def render_short(p, project, video, t0, t1, layout, text, out, sheet):
     D = t1 - t0
     if D > 60: print(f'Aviso: {D:.0f} s pasa de 60 s (algunas plataformas lo toman como video normal).')
-    print(f'Short: {fmt(t0)} → {fmt(t1)} ({D:.1f} s), layout {a.layout}')
-
-    ov = os.path.join(project, 'short_overlay.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), a.layout, not a.no_text)
+    print(f'Short: {fmt(t0)} → {fmt(t1)} ({D:.1f} s), layout {layout} → {os.path.basename(out)}', flush=True)
+    ov = os.path.join(project, f'short_overlay_{os.path.basename(out)}.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), layout, text)
     fo = max(0.0, D - 1.0)
-    if a.layout == 'fit':
+    if layout == 'fit':
         fc = ('[0:v]split[a][b];'
               '[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=28:2,eq=brightness=-0.10:saturation=1.15[bg];'
               '[b]scale=1080:-2:flags=lanczos[fg];'
@@ -133,20 +168,19 @@ def main():
               '[c]crop=1080:1080:420:0[gp];'
               f'[bg][cam]overlay=(W-w)/2:{(840 - 2 * ch) // 2}[v1];[v1][gp]overlay=0:840[v2];[v2][1:v]overlay=0:0')
     fc += f',fade=t=in:st=0:d=0.2,fade=t=out:st={fo:.3f}:d=1.0,format=yuv420p[v]'
-    out = os.path.join(ROOT, 'output', a.name or f'{name}_short.mp4')
     cmd = ['ffmpeg', '-v', 'error', '-y', '-ss', f'{t0:.3f}', '-t', f'{D:.3f}', '-i', video, '-loop', '1', '-i', ov,
            '-filter_complex', fc, '-map', '[v]', '-map', '0:a',
            '-af', f'afade=t=in:st=0:d=0.25,afade=t=out:st={fo:.3f}:d=1.0',
            *video_encoder_args('final', 16), '-r', str(p.FPS), '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', out]
     r = subprocess.run(cmd)
-    if r.returncode != 0: raise SystemExit('Falló ffmpeg')
     os.remove(ov)
+    if r.returncode != 0: raise SystemExit('Falló ffmpeg')
     dur = float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out],
                                capture_output=True, text=True).stdout or 0)
-    sheet = os.path.join(project, 'short_sheet.jpg')
     step = max(1.0, dur / 8)
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', out, '-vf', f'fps=1/{step:.3f},scale=270:480,tile=8x1', '-frames:v', '1', sheet])
-    print(f'Listo: {out}  ({dur:.1f} s, {os.path.getsize(out) / 2**20:.0f} MB)\nHoja para revisar: {sheet}')
+    print(f'Listo: {out}  ({dur:.1f} s, {os.path.getsize(out) / 2**20:.0f} MB)  hoja: {sheet}', flush=True)
+    return dur
 
 
 if __name__ == '__main__':

@@ -305,17 +305,24 @@ def chapters(p):
     first = next((s for s in segs if s['kind'] in ('zoom_out', 'play')), None)
     if first: ch.append((first['o0'], 'Primera play'))
     for o, cap in sorted(p.captions):
-        ch.append((o - 0.5, f'{cap[0]} con {cap[1]}' if len(cap) > 1 and cap[1] else cap[0]))
+        sub = cap[1] if len(cap) > 1 else ''
+        maps = ('MIRAGE', 'DUST2', 'DUST 2', 'INFERNO', 'NUKE', 'ANCIENT', 'ANUBIS', 'VERTIGO', 'OVERPASS', 'TRAIN')
+        ch.append((o - 0.5, f'{cap[0]} en {sub.title()}' if sub.upper() in maps else (f'{cap[0]} con {sub}' if sub else cap[0])))
     inter = next((s for s in segs if s['kind'] == 'interlude'), None)
     if inter: ch.append((inter['o0'], 'Interludio')); ch.append((inter['o1'], 'Segundo drop'))
     face = next((s for s in segs if s['kind'] == 'face_out'), None)
     if face: ch.append((face['o0'] - 3, 'Cierre'))
     ch.sort(key=lambda c: c[0]); out = []
+    STRUCT = ('Primera play', 'Interludio', 'Segundo drop', 'Cierre')
     for t, lb in ch:
         t = max(0.0, t)
-        if out and t - out[-1][0] < 10:              # YouTube pide 10 s mínimo: gana el capítulo con título de play
-            if lb not in ('Primera play', 'Interludio', 'Cierre') and out[-1][1] not in ('Intro',): out[-1] = (out[-1][0], lb)
-            continue
+        if out and t - out[-1][0] < 10:              # YouTube pide 10 s mínimo entre capítulos
+            pt, plb = out[-1]
+            if plb in STRUCT and lb not in STRUCT and t - pt <= 4:
+                out[-1] = (pt, f'{"Segundo drop" if plb == "Interludio" else plb} · {lb}')   # "Segundo drop · ACE con M4A1-S"
+            elif plb in STRUCT and lb not in STRUCT and (len(out) < 2 or t - out[-2][0] >= 10):
+                out[-1] = (t, lb)                                   # la play con título vale más que el rótulo genérico
+            continue                                                # nunca se le pone a un minuto el nombre de otra play
         out.append((t, lb))
     if out and p.TOTAL - out[-1][0] < 10: out.pop()
     return [(fmt(t), lb) for t, lb in out]

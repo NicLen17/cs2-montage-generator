@@ -77,6 +77,25 @@ Probado en un Ryzen 5 7600X, 32 GB y una RX 7900 XT: un edit de 2:30 se renderiz
    ```
 4. Abrí la carpeta en Claude Code (app de escritorio → Code → abrir carpeta, o `claude` en una terminal dentro de la carpeta).
 
+## Todo en uno: `/cs2-pack`
+
+Con los clips y la canción en `entrada/`, un solo pedido arma todo el contenido del video:
+
+```
+/cs2-pack
+```
+
+| Sale | Para |
+|---|---|
+| `01_youtube_<nombre>.mp4` | YouTube (1920×1080) |
+| `02_short1…4_<nombre>.mp4` | TikTok, Instagram Reels y YouTube Shorts (1080×1920), tramos que no se repiten entre sí |
+| `thumbnail.jpg` + opciones | miniatura del video largo |
+| `youtube.md` | títulos, descripción con capítulos, tags y aviso de Content ID |
+| `redes.md` | texto y hashtags de cada short para cada plataforma, y en qué orden publicarlos |
+| `LEEME.md` | qué subir a cada lado |
+
+Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan el doble). Claude solo frena para preguntar lo que no puede detectar (golpes de voz de la canción, armas dudosas), todo en un mensaje al principio.
+
 ## Tu primer edit (paso a paso)
 
 1. **Dejá los archivos en `entrada/`:** los clips `.mp4` (1080p, 60 fps; los de 50 fps se convierten solos) y la canción (`.mp3`, `.wav` o `.m4a`). Opcional: `logo.png` con tu avatar.
@@ -106,6 +125,7 @@ Claude ubica cada minuto con `engine/locate.py` (qué clip, qué kill, qué tran
 | Skill | Para qué |
 |---|---|
 | `cs2-edit` | **Por defecto.** Arma, corrige y renderiza el edit. Reglas de corte, visibilidad, drops, efectos, texto y audio. |
+| `cs2-pack` | Todo en uno: edit + shorts + miniatura + textos de YouTube y redes, en una carpeta de entrega. |
 | `clip-catalog` | Guarda cada clip verificado una vez (kills, disparos, arma, mapa, puntaje, dónde se usó) para no volver a revisarlo. |
 | `cs2-short` | Short vertical 9:16 a partir del edit terminado. |
 | `yt-publish` | Miniatura, título, descripción con capítulos, tags y aviso de derechos de la canción. |
@@ -123,7 +143,8 @@ engine/                  análisis, plan, render, audio y chequeos
   render.py, audio.py    imagen y mezcla
   check_render.py        tirones, 60 fps, duración, LUFS
   locate.py              minuto del video → clip, kill y transición, con tiras de cuadros
-  short.py               short vertical 9:16
+  short.py               shorts verticales 9:16 (uno o varios que no se pisan)
+  pack.py                junta la entrega en output/<nombre>_pack/
   publish.py             miniatura, capítulos y datos para YouTube
 projects/<nombre>/       un proyecto por video (clips, canción, plan.py, análisis, caché)
 projects/my_jealousy_v3/plan.py   el plan de referencia que se copia en cada edit nuevo
@@ -138,6 +159,7 @@ output/                  videos terminados
 - [x] Chequeos automáticos de visibilidad de kills, ritmo, tirones y volumen
 - [x] Catálogo de clips verificados reutilizable entre edits
 - [x] Short vertical y paquete para YouTube
+- [x] Todo en uno (`/cs2-pack`): edit, shorts, miniatura y textos por plataforma
 - [x] Aprender el estilo de un edit de referencia
 - [ ] Prueba de regresión: comparar previews de un proyecto fijo al cambiar `render.py`
 - [ ] Detección de armas por el ícono del killfeed (hoy se verifica a ojo)
