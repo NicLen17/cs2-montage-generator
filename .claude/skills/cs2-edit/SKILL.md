@@ -1,0 +1,160 @@
+---
+name: "cs2-edit"
+description: "Skill por defecto del proyecto wako-edits: arma, corrige y renderiza en esta PC (GPU local) montajes de CS2 estilo WAKO TV con cortes al beat, efectos de kill, transiciones con luz, intro con logo y cierre con reacción. Usala SIEMPRE que el usuario adjunte o deje clips (.mp4) y una canción (en el chat, en entrada/ o en una carpeta), escriba /cs2-edit, diga 'hacé un edit', 'armá un montaje', 'otro video', o pida cambiar algo de un edit ya hecho ('en el 1:23 no se ve la kill', 'subí el juego', 'hacé una v4'). Es la versión que evoluciona: usala en lugar de anthropic-skills:cs2-edit."
+---
+
+# CS2 Edit — montaje de plays estilo WAKO TV
+
+Entrada: clips .mp4 de Twitch (1080p60, cámara del streamer arriba a la izquierda) y un archivo de audio con la canción. Salida: un MP4 1080p a 60 fps, de 2 a 3:30 según el tema, guardado en `output/`.
+Este skill corre **en la PC del usuario** con Claude Code, dentro del proyecto `wako-edits`. Cada video es una carpeta `projects/<nombre>/` (clips copiados como `clips/c1.mp4…`, `song.mp3`). Nunca muevas ni modifiques los originales del usuario. Los scripts están en `engine/` (ver CLAUDE.md).
+Esta es la versión del proyecto y la única que se actualiza. La de la cuenta (`anthropic-skills:cs2-edit`) quedó congelada: no la uses.
+
+**Archivos de apoyo (leelos en el paso indicado, no antes):**
+- `references/plan.md` — **obligatorio antes de escribir o modificar `plan.py`** (formato de plays, anclas, cómo cuadrar residuos).
+- `references/errores.md` — repasalo antes del render final y cuando el usuario marque un error.
+- `references/motor.md` — solo si vas a tocar `render.py`, `audio.py` o `analyze_song.py`.
+
+## 0. Antes de empezar
+- Si falta la canción, pedila: YouTube no se puede bajar. Si el usuario no adjuntó el logo, se usa `engine/assets/logo.png` (círculo con el avatar del canal).
+- Datos del canal (por defecto): **WAKO TV**, `twitch.tv/el_wako`, cámara en `(25,18)-(490,278)` y a veces abajo a la izquierda, en `(25,802)-(490,1062)` o arriba a la derecha. Verificalo en un fotograma de cada clip.
+- Nunca escribas la letra de la canción en pantalla: tiene derechos de autor. Tampoco hay frases ni palabras animadas sobre las plays (ver §7).
+- Armá una lista de tareas: análisis → plan → chequeo de kills → preview → render → revisión → entrega.
+- **Catálogo de clips** (skill `clip-catalog`): antes de analizar, `python engine/catalog.py scan` y, después de copiar los clips, `python engine/catalog.py prefill projects/<nombre>`. Los clips ya verificados en otro edit traen sus kills y disparos y no se vuelven a verificar. Usá `python engine/catalog.py list` para elegir plays (puntaje, arma, mapa, si ya se usó).
+
+## 1. Analizar la canción
+`python engine/analyze_song.py projects/<nombre>` guarda `beats.npy`, `hits.npy` y `grid.npy` (onset real de cada golpe, grilla regular, `TGT`). Las kills clave se alinean a `TGT`, nunca al beat estimado.
+- Mapa de bombo por beat: encontrá el **drop** (donde entra la batería) y el **corte de batería** (break) que va antes del segundo drop. La estructura sale de ahí.
+- Si la canción arranca con muchos segundos sin batería, `SONG_A0` saltea parte de esa intro (empezando en un compás) para que el logo dure 6 a 8 s.
+- Marcá momentos vocales fuertes (una nota sostenida): sirven para la transición "mega" y para un flick destacado.
+- **Golpes vocales dobles ("bang bang" y similares):** `analyze_song.py` lista los pares. No se puede escuchar la canción: preguntale al usuario en qué momentos están y usá la detección para afinar al milisegundo. En cada uno, un clip con dos kills: la kill A cae en el primer golpe y un corte seco lleva a la kill B en el segundo, con un efecto corto (punch de zoom, separación RGB y un destello leve de 0.10). Nada de destellos fuertes ahí, porque queman la imagen.
+- Contrabeats (beats impares respecto del drop, los chasquidos o palmas): la última play debe caer ahí.
+- **Mapa de secciones:** energía de la pista sin voz compás por compás (separá voz y música con Demucs: `python -m demucs --two-stems=vocals -n htdemucs -o stems song.mp3`). Cada subida fuerte después de un compás "valle" es un **drop o estribillo**; anotalos todos (en "My Jealousy": 16, 32, 64, 80, 96 y 112 s) y clasificalos: **movido** (batería completa, frenético) o **de un golpe** (entra suave o con un solo impacto).
+- **Golpes de voz aislados** ("stop", un grito, una palabra seca con silencio después), casi siempre en el compás valle justo antes de un drop: van con una kill exacta. Buscalos con la voz separada (ataque fuerte + silencio después) y confirmá con el usuario si hay dudas.
+- **Golpes secos de la música** (los picos más fuertes de onset en la pista sin voz dentro de un drop): ahí el video también corta.
+- **Repeticiones de palabras o sílabas** ("jealousy, jealousy", "mi, mi"): ataques vocales seguidos con timbre parecido sobre la voz separada (`vocal_reps.py` del proyecto `my_jealousy_v2`).
+
+## 2. Analizar los clips
+0. **Preparar los clips:** copiá cada original a `clips/cN.mp4` en orden de fecha y guardá la correspondencia en `clips_map.txt` (`c3 <- archivo_original.mp4`). **Clips de CS:GO** (antes de fines de septiembre de 2023, HUD viejo): no se usan; marcalos como DEPRECADO en `clips_map.txt` (el catálogo ya los marca `csgo`). Si un clip no es de 60 fps (los viejos vienen a 50), en la copia pasalo a 60 con `minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` (en segundo plano: es lento). Armá una grilla con un cuadro por clip y anotá dónde está la cámara en cada uno (a veces va arriba a la derecha y tapa el killfeed). El nick del streamer cambia entre clips ("Wako", "ElWako", "El pana piolin").
+1. `python engine/analyze_clips.py projects/<nombre>` deja en `sheets/` hojas de contexto a 1 fps (192×108, 10 columnas: mapa, arma, run boost, humo, giro) y recortes del killfeed. Los clips que `prefill` marcó como verificados (`verified.json`) no se vuelven a escanear.
+2. **Kills propias** = entradas del killfeed con borde rojo (a veces rosado mientras aparece). `analyze_clips.py` recorta `crop=670:394:1250:24` (alto par: con 395 ffmpeg entrega 394 filas y la lectura se desfasa), usa la máscara `R>170 & R-max(G,B)>60` y cuenta una entrada por cada par de bordes separados 25-35 px. **La detección automática falla seguido** (compresión, fondos rojos, pantalla roja al morir): usala solo como pista.
+3. **Verificá siempre a ojo** (salvo los clips verificados que vienen del catálogo). Tiras del killfeed a 1 fps con todos los clips (`crop=620:230:1300:24`, 6 columnas, cada clip en sus filas) y leé cada entrada con borde rojo. El cuadro "N s" de `fps=1` corresponde al tramo N a N+0.5 s: buscá el instante exacto en `[N-0.3, N+0.75]` con el conteo por cuadro (`cntN.npy`) o con una tira a 10 fps. Dos líneas que aparecen juntas con AWP suelen ser un collateral, y las líneas de compañeros no cuentan ("Compañero + Wako → X" es una asistencia).
+   - **Contá las kills de cada clip contra el killfeed final** (cuántas entradas propias hay al terminar la ronda). Si tu lista tiene menos, falta una: las kills muy seguidas o tapadas por un humo se pierden en la detección automática. Ese fue el error más repetido: plays con 4 kills mostradas como 3. Arriba a la izquierda, debajo del dinero, las calaveras cuentan las kills de la ronda.
+   - **Si la cámara tapa el killfeed:** los retratos de arriba (el enemigo muerto se pone gris) y el audio sirven solo como pista: el gris llega tarde o se confunde con destellos, y en el audio se mezclan los tiros enemigos. **Confirmá cada kill cuadro a cuadro** (tira a 20 fps: fogonazo de tu arma + enemigo cayendo). En el clutch de Mirage las kills estimadas por retratos salían 0.3-1.6 s antes y el video terminó mostrando un tiro errado y sin la kill con pistola.
+   - Si el disparo detectado cae a menos de 0.05 s del killfeed o más de 0.46 s antes, es sospechoso: revisalo con una tira de cuadros cada 0.1 s (fogonazo del arma, retroceso) y corregilo a mano.
+   - Kills a través de paredes o humo: dejá más cola después (1 a 1.5 s), para que se entienda que murió alguien. Si el tiro es a través de humo, dale también más lead.
+   - Escribí la lista final en `kf.json` y corré `python engine/analyze_clips.py projects/<nombre> --shots`.
+4. **Disparo exacto** = onset en el audio del clip, banda 1.5-9 kHz, ventana `[kf-0.45, kf+0.06]`. El killfeed aparece entre 0.1 y 0.45 s después del tiro. Si el desfase es mayor a 0.46 s o coincide con el de la kill anterior, usá `kf-0.12`.
+5. Por clip, anotá: kills con sus tiempos, qué la hace especial (360, flick, cambio de arma, enemigo cayendo, a través del humo, collateral, run boost, ACE), si al final el jugador muere y dónde aparece la reacción en cámara.
+6. **Guardá lo verificado en el catálogo:** `python engine/catalog.py import projects/<nombre>` y completá arma, mapa, puntaje y etiquetas de los clips nuevos con `catalog.py set` (ver skill `clip-catalog`). El próximo edit los reusa.
+
+## 3. Visibilidad de cada kill (la corrección más repetida)
+En los tres primeros edits, la mayoría de las correcciones fueron por kills que faltaban o no se llegaban a ver. Antes de cualquier preview, cada kill tiene que cumplir estos mínimos. Son pisos, no valores fijos: si la play lo pide, dale más.
+
+| Tipo de kill | Antes del disparo | Después del disparo |
+|---|---|---|
+| Normal, enemigo visible | 0.8 s | 0.6 s |
+| Primera kill de una play | 1.2 s | 0.6 s |
+| Poco visible: a través de pared o humo, lejana, enemigo que cae fuera de cuadro, estando flasheado, no scope | 1.2 s | 1.2 s |
+| Movimiento técnico (360, flick, cambio de arma, run boost, salto) | desde que empieza el movimiento + 0.3 s | 0.8 s |
+| Última kill de una play (antes de transición) | 0.8 s | 0.7 s **más** la mitad de la transición |
+
+- **Ninguna kill dentro de una transición:** el disparo tiene que estar al menos a la mitad de la transición + 0.15 s del centro del corte (whip ±0.13 → 0.28 s; light ±0.17 → 0.32 s; mega ±0.30 → 0.45 s). La transición tapaba kills ("hice la transición rápido y no se ve que disparé").
+- **Kills seguidas en un mismo tramo** (menos de 1.5 s entre sí): no se cortan entre ellas; van en el mismo tramo continuo.
+- **Única excepción:** el corte seco del "bang bang", donde la kill A dura lo que separa los dos golpes.
+- **El título manda el conteo:** si dice 4K o ACE, tienen que verse 4 o 5 kills completas con los mínimos de arriba. Si no entran, cambiá el título o sumá tramos, nunca al revés.
+- **Chequeo automático:** `python engine/check_kills.py projects/<nombre>` recorre todas las kills de `kf.json` de cada clip usado e imprime una tabla con pre, post y distancia a la transición más cercana. Marca las kills que faltan en el video y las que quedan debajo del mínimo. Las kills poco visibles o con movimiento técnico se declaran en el plan con `hard=[i]` y `tech={i: inicio_del_movimiento}`. **No renderices hasta que la tabla salga limpia.**
+- Si hace falta tiempo para cumplir los mínimos, sacalo de tiempos muertos (pre-rolls largos sin acción, colas después del "RONDA GANADA") o descartá la play más floja. Nunca recortes una kill.
+
+### Tiempos muertos (techos, el otro lado de los mínimos)
+Los mínimos de arriba evitan que una kill no se entienda; estos techos evitan que el edit pierda ritmo. En un edit frenético hasta unos décimos de más mirando la nada se sienten largos, y el usuario los marcó varias veces.
+- **Decidí con el contexto de la ronda:** antes de la primera kill de cada toma mostrá solo lo que la explica (el enemigo apareciendo, el peek, el giro, el salto, el apuntado del flick). Después de la última kill, solo lo que hace falta para entender que murió. Si no aporta, se corta.
+- **Techos por defecto** (desde el inicio de la toma hasta su primera kill / después de su última kill, sin contar la media transición):
+
+| Caso | Antes, máximo | Después, máximo |
+|---|---|---|
+| Primera kill de una play | 1.6 s | — |
+| Primera kill de un tramo siguiente (después de un corte dentro de la play) | 1.3 s | — |
+| Última kill de una toma, normal | — | 0.9 s |
+| Poco visible (humo, pared, lejana, cae fuera de cuadro) | 1.8 s | 1.6 s |
+| Entre dos kills dentro de la misma toma | 2.0 s | |
+| Tramos frenéticos (los drops movidos, `FRANTIC` en el plan) | ×0.75 | ×0.75 |
+
+- **Más tiempo solo con razón concreta:** wallbang o kill a través de humo (se tiene que entender que murió alguien), movimiento técnico (el giro entero), un enemigo que se acerca a la vista, una rotación que explica la jugada. Declaralo en el plan con `hard=[i]`, `tech={i: inicio}` o `ctx={i: (pre_max, post_max)}`.
+- **Siempre se corta:** mirar a la nada, caminar o esperar sin enemigos, recargar, cambiar de arma sin amenaza, el cartel de "RONDA GANADA" (salvo en el cierre con la reacción), el scope vacío, un tiro errado antes de la kill (en el clutch de Mirage se veía un tiro de AWP fallado y el usuario lo pidió sacar).
+- **Huecos dentro de una play:** si entre dos kills de la misma toma pasan más de ~2 s sin nada, partí la toma en dos tramos con un corte corto en vez de mostrar el viaje.
+- **Ojo con el redondeo al beat:** la kill clave cae en el *siguiente* `TGT` después de `cursor + lead`, así que el lead real puede ser hasta 0.5 s más largo que el pedido. Pedí leads en el piso (1.2 / 0.8) y dejá que el redondeo complete; si el chequeo marca tiempo muerto, bajá el lead pedido o cambiá el orden de las plays.
+- `engine/check_kills.py` lista estos avisos (**TIEMPO MUERTO**) debajo de la tabla. Resolvelos o justificalos antes del render, igual que los mínimos.
+
+## 4. Reglas de corte (las que más pidió el usuario)
+- **Nunca acelerar ni hacer rampas de velocidad en el gameplay.** Los tiempos muertos se sacan con cortes, siempre a velocidad 1x.
+- **Mostrar la play completa:** todas las kills del clip y el contexto que la hace impactante (el giro entero del 360, el enemigo cayendo desde antes, el cambio rápido a la Deagle, el salto del run boost, el apuntar abajo antes del flick). Nunca terminar un tramo mirando a la nada y nunca cortar antes de la última kill.
+- Si un clip es ACE o 4K, venderlo así: las 5 o 4 kills y el título correcto. El arma del título sale del ícono del killfeed de esas kills (y de la lista de armas del HUD), no de adivinarla (una vez se puso "DEAGLE" en una Glock y "4K" en un ACE; una M4 con silenciador y asa es M4A1-S). Si la play cambia de arma, poné el mapa como subtítulo.
+- Si el clip termina con el jugador a punto de morir, cortar justo después de la última kill propia, no en el momento ambiguo.
+- Lead antes de la kill clave del primer tramo: entre 1.0 y 2.0 s, más contexto si la play lo pide. Tramos siguientes de la misma play: unos 0.5 s. Cola después de la última kill: de 0.5 a 0.7 s. **Siempre respetando los mínimos de §3**, que mandan sobre estos valores.
+- **Kill clave de cada tramo exactamente en un `TGT`** (0 ms). Las kills seguidas quedan donde ocurrieron en la partida.
+- **La canción suena de corrido, sin saltos.** Ajustá la cantidad de plays y los leads para que la primera parte llegue justo al break. Si es inevitable, el único salto permitido es dentro del negro del interludio, con crossfade de 25 ms.
+- Si no alcanzan las plays, sumá contexto (leads más largos) antes de cortar la canción. Si sobran, descartá las de menor impacto (una sola kill sin nada especial).
+- Orden: la intensidad va subiendo. Primera parte: one taps y 3K. Cierre de la primera parte: un collateral y un ACE. Segunda parte (después del drop): las plays más fuertes. **La play con zoom a la reacción del streamer siempre va última.**
+
+### Drops y estribillos (pedido explícito del usuario)
+- **Todo drop y todo estribillo arranca con una kill exactamente en su downbeat** (anclala con `kill_at`), con un efecto acorde al impacto. Nunca una transición en el drop y la kill un segundo después, ni la kill un poco antes del drop.
+- **La play del drop tiene que estar a la altura del drop:**
+  - Drop **movido** (batería completa, frenético, como "My Jealousy"): play frenética, idealmente **3 kills o más en 3-4 s** (spray, ACE rápido, triple con pistola). Dos taps tranquilos no alcanzan.
+  - Drop **de un golpe** o suave: alcanza un one tap o una o dos kills limpias.
+- Reservá las mejores plays rápidas para los drops y armá el resto alrededor de esos anclajes. Si un drop queda sin una play digna, reorganizá clips o leads antes de aceptar una kill floja.
+- **Golpes de voz aislados ("stop"):** una kill exacta en el golpe. Si el golpe está en el compás antes de un drop, buscá una play que tenga kills tanto en el golpe como en el drop (por ejemplo un ACE de pistola cuya 4.ª kill cae en el drop y la 2.ª en el "stop").
+- **Drop después del negro del interludio:** cortá en cada golpe seco de la música, una kill por golpe, sin mostrar al jugador caminando entre kills (ráfaga de la misma play con `sync=0.0`, ver `references/plan.md`).
+- **Ráfagas de sílabas** (una kill de un clip distinto en cada repetición de la palabra, con corte seco): **solo en dos momentos**, el primer drop/estribillo y el último drop. Efecto casi nulo en cada kill (`fx='burst'`: un destello mínimo) y kills donde el enemigo se ve cerca y cae claro: con muchos efectos no se entiende que es una kill y parece que solo pasan pantallas. Mostrá ~0.14 s antes del disparo. **Arranque inmediato:** la primera sílaba es la kill del clip que viene antes (su toma muestra sus kills anteriores en el lead) y el corte a la siguiente sílaba sale enseguida; no dejes la kill del clip anterior, una cola y recién después la ráfaga.
+- **Colas:** después de la última kill de una play, cortá a la transición apenas se cumple el mínimo de §3. Unos décimos de más mirando a la nada se notan.
+- **Leads del primer tramo:** si el clip tiene mucho tiempo sin acción antes de la primera kill, no pases de ~1.2-1.6 s (el usuario marcó esperas largas antes de empezar a matar).
+
+## 5. Estructura del video
+1. **Intro con logo** (de 0 a un compás antes del drop): avatar circular con anillo degradado violeta, magenta y cian que se dibuja y rota, luz que late con el beat, "WAKO TV" (Montserrat 800, con brillo) y debajo "<NOMBRE DEL TEMA> · M O N T A G E". Sale con un estallido de brillo.
+2. **Primera play:** arranca con zoom a 2x sobre la cámara y se abre hacia la play. La primera kill cae en el drop.
+3. **Primera parte:** plays hasta el break.
+4. **Interludio:** fundido a negro lento de 1.4 s, con bloom y un zoom de 4 %. Sobre negro, orbes de luz desenfocados que aparecen en cada beat. Sin texto: solo las luces. La parte negra es corta (empieza unos 8 beats antes del drop); no dejes segundos muertos en negro. Desde el corte de batería, la play siguiente (la mejor, por ejemplo un ACE) se revela de a poco. La primera kill cae en el drop.
+5. **Segunda parte:** las plays más fuertes, con la última en los contrabeats.
+6. **Cierre:** la última play sigue hasta la reacción del streamer con un zoom suave (1.75x máximo) y un fundido. Después, sobre negro: "NOS VEMOS EN EL STREAM", tres puntos que aparecen de a uno y `twitch.tv/el_wako` debajo. La música se apaga hasta el negro total.
+
+## 6. Efectos y transiciones
+- **Zoom máximo 2x** en cualquier zoom sobre la cámara o la play: la fuente se pixela.
+- **Corrección de color** fija del canal (curva en S, sombras frías y luces cálidas, saturación ×1.15, bloom y viñeta leves): ya está en `render.py`.
+- **Transiciones entre plays:** `whip_lr`/`whip_rl`, `light` y `zoom`. Variá entre ellas (`BT` del plan). **Dentro de una misma play** usá versiones cortas (±0.075 s).
+- **Transición "mega"** (una sola, en un hito de la canción como la entrada de una voz): punch-in con desenfoque radial, separación RGB, luz horizontal y destello solo en el centro. Lleva whoosh y un golpe grave.
+- **Efectos de kill** que van rotando (`KILL_FX`): bloom, zoom con separación RGB, sacudida con desenfoque, destello breve, zoom radial y golpe de contraste. Todos sutiles, entre 0.11 y 0.2 s de decaimiento. **Nada que tape la play.** **Todos entran con una rampa de ~3 cuadros** y la sacudida es una oscilación suave, nunca ruido aleatorio por cuadro: un salto de zoom o de posición de un cuadro al otro se ve como un "tirón" del video (el usuario lo reportó como un error).
+- **ACE:** golpe fuerte (destello, anillo, luz horizontal, sacudida) **solo en la primera y en la última kill**. Las del medio, un destello breve con un poco de brillo. Muchos pulsos seguidos marean. En mapas claros (Dust2 al sol) el golpe fuerte del ACE quemaba toda la pantalla: revisá el cuadro de la última kill; el enemigo tiene que verse.
+- **"Flashing light"** (`flash=[i]`) para tiros especiales (a través del humo, flick, collateral, la kill que cierra una play): destello, bloom, luz horizontal normalizada y un anillo. Revisá en preview que no queden quemados.
+- **Revisá cada efecto fuerte en preview sobre un mapa claro** (Dust2, Mirage al sol): los brillos, la luz horizontal y los destellos queman la imagen y hubo que bajarlos varias veces. Si la play no se lee en el cuadro del efecto, es demasiado.
+- **Cámara lenta** solo con interpolación óptica (`build.py` la genera desde `SLOWMO_SRC`). Va después de un tiro destacado (collateral, kill con cambio de arma) y dura hasta la transición siguiente, con desaturación leve y audio pasado por un filtro grave. Nunca para estirar tiempo, y no en finales de play comunes (en el "casi 5K" el usuario pidió sacarla). Como mucho 2 o 3 por video.
+
+## 7. Texto
+- **No poner letra de la canción ni narrar lo que pasa.**
+- **Sin frases épicas ni palabras animadas** (las tipo "UNA USP-S / CINCO KILLS / CERO DUDAS"): el usuario las dio de baja. Ni sobre las plays ni en el interludio (`PHRASES` y `WORDS` quedan vacíos).
+- **Títulos solo en las plays de más impacto** (ACE, 4K, CASI 5K, RUN BOOST, collateral, clutch): chicos, centrados abajo, con subtítulo (arma o mapa). Duran 1.5 s, aparecen y desaparecen con un fade y llevan una sombra suave.
+
+## 8. Audio
+- La música domina, pero las armas tienen que reconocerse.
+- **Juego más fuerte de lo que parece necesario:** el usuario pidió subir las armas en tres videos seguidos. Ganancia de 0.78 (0.40 en el cierre) y énfasis de transitorios que baja la música en cada tiro: los disparos y el sonido de headshot tienen que reconocerse claramente. No bajes estos valores.
+- Whoosh en cada whip, shimmer en las transiciones de luz y whoosh en el zoom de apertura y en el de cierre.
+- Fundido de entrada de la música de 0.8 s y de salida durante el cierre. Pico en -1 dBFS y unos -10 LUFS integrados.
+
+## 9. Pipeline (pasos y chequeos)
+1. **`plan.py`:** copiado de `projects/my_jealousy_v3/plan.py`, cambiando solo los datos. **Leé `references/plan.md` antes de escribirlo.** Corré `python projects/<nombre>/plan.py` y revisá desfases, residuos y avisos `WARN`.
+2. **Chequeo de kills** después de cada cambio del plan: `python engine/check_kills.py projects/<nombre>` limpio (mínimos, tiempo muerto y kills que faltan).
+3. **Previews** antes del render completo: `python engine/build.py projects/<nombre> --preview t1,t2,...` (JPG en `projects/<nombre>/previews/`, miralos con la herramienta de lectura de imágenes). **Hoja mínima:** intro, transiciones, el cuadro de cada kill de drop o estribillo, cada kill de ráfaga (+0.1 s), cada corte de golpe seco, la última kill de cada ACE (sobre todo en mapas claros), una secuencia cuadro a cuadro alrededor de una kill (para ver que el efecto entra sin salto), el interludio, el cierre con la reacción, el outro y **un cuadro por kill** de las plays con título (`check_kills.py --times` imprime la lista).
+4. **Render:** repasá `references/errores.md` y corré `python engine/build.py projects/<nombre>` **en segundo plano** (la terminal corta a los 10 min). Divide en pedazos de 6 s en paralelo, reusa los que no cambiaron y codifica con la GPU. En las correcciones solo se renderiza lo que cambió. Si falla por memoria, bajá `--workers`.
+5. Nunca uses `timeout` en el render ni en ffmpeg: un `timeout` corta el video sin avisar (pasó una vez: salió de 2:25 en vez de 2:50).
+6. **Chequeo final:** `build.py` corre solo `check_render.py` al terminar y lo guarda en `projects/<nombre>/check_render.txt` (cuadros repetidos, tirones sobre las kills, 60 fps exactos, duración contra `TOTAL`, LUFS y pico). Leelo siempre. Si el pico pasa de -1 dBFS, bajá solo el audio sin re-renderizar (`ffmpeg -i x.mp4 -map 0:v -map 0:a -c:v copy -af volume=-1.2dB -c:a aac -b:a 320k ...`). Mirá además una hoja final de fotogramas.
+- Los rectángulos blancos u overlays del stream que aparecen en algunos clips vienen de los originales: no son del motor.
+
+## 10. Revisiones
+- Pedí o confirmá los tiempos de lo que no se puede detectar de forma confiable (momentos de la letra, armas dudosas). Verificá el arma de cada título (una vez se puso "DEAGLE" en una Glock).
+- **El usuario marca timestamps del video:** `python engine/locate.py projects/<nombre> 1:23,2:05` dice para cada uno el tramo, el clip (y su archivo original), el tiempo en el clip, la kill y la transición más cercanas y el tiempo de canción, y arma tiras de cuadros del clip original y del video renderizado en `projects/<nombre>/insp/`. Miralas antes de cambiar nada.
+- **No toques lo que el usuario llamó "core"** (secciones ya sincronizadas): anclalo por tiempo de canción (`kill_at`, `kill_at_seg`, `start_at`).
+- Los cambios de tiempo se compensan con los leads de las plays vecinas (más contexto es preferible a cortar), no moviendo las anclas.
+- Cuando el usuario marca una kill que no se ve, revisá también las otras plays del mismo video con el chequeo de §3: casi siempre hay más casos iguales.
+- Re-render en el mismo proyecto: la caché hace que solo se rendericen los pedazos que cambiaron. Para un cambio grande o de estructura, nueva carpeta `_v2`, `_v3`.
+- Si el usuario corrige algo que ya está en `references/errores.md`, es un error repetido: decíselo y revisá por qué la regla no alcanzó.
+
+## 11. Respuesta final
+Un resumen corto: duración y cantidad de plays, cómo se usó la canción, títulos puestos, qué se dejó afuera y por qué, y lo que el usuario debería revisar (por ejemplo el audio, que no se puede escuchar desde acá). Sin repetir paso por paso. Al final, en una línea, ofrecé el short vertical (`cs2-short`) y el paquete para YouTube (`yt-publish`).

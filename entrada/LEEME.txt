@@ -1,0 +1,7 @@
+Dejá acá los clips (.mp4) y la canción (.mp3/.wav/.m4a) del próximo edit.
+Opcional: logo.png si querés cambiar el logo.
+
+Después escribí en Claude:  /cs2-edit hacé un edit
+(o adjuntá los archivos directamente en el chat).
+
+Los archivos se COPIAN al proyecto; los originales no se tocan.

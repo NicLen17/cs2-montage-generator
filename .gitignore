@@ -1,0 +1,25 @@
+# Archivos del usuario y resultados pesados (no van al repo)
+entrada/*
+!entrada/LEEME.txt
+output/
+backup/
+catalog/
+__pycache__/
+*.pyc
+.claude/settings.local.json
+
+# Proyectos: solo las plantillas chicas (sin clips, canción, stems, caché ni previews)
+projects/*
+!projects/ejemplo_i_dont_like/
+!projects/my_jealousy_v3/
+projects/my_jealousy_v3/*
+!projects/my_jealousy_v3/plan.py
+!projects/my_jealousy_v3/kf.json
+!projects/my_jealousy_v3/shots.json
+!projects/my_jealousy_v3/grid.npy
+!projects/my_jealousy_v3/hits.npy
+!projects/my_jealousy_v3/beats.npy
+!projects/my_jealousy_v3/vocal_reps.json
+!projects/my_jealousy_v2/
+projects/my_jealousy_v2/*
+!projects/my_jealousy_v2/vocal_reps.py
