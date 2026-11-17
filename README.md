@@ -77,9 +77,9 @@ Probado en un Ryzen 5 7600X, 32 GB y una RX 7900 XT: un edit de 2:30 se renderiz
    ```
 4. Abrí la carpeta en Claude Code (app de escritorio → Code → abrir carpeta, o `claude` en una terminal dentro de la carpeta).
 
-## Todo en uno: `/cs2-pack`
+## Todo en uno: `/cs2-pack` (por defecto)
 
-Con los clips y la canción en `entrada/`, un solo pedido arma todo el contenido del video:
+Con los clips y la canción en `entrada/` (o adjuntos en el chat), un solo pedido arma todo el contenido del video. Es lo que pasa por defecto; si querés solo el video largo, pedí "solo el edit":
 
 ```
 /cs2-pack
@@ -101,12 +101,12 @@ Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan e
 1. **Dejá los archivos en `entrada/`:** los clips `.mp4` (1080p, 60 fps; los de 50 fps se convierten solos) y la canción (`.mp3`, `.wav` o `.m4a`). Opcional: `logo.png` con tu avatar.
 2. **Pedilo en Claude Code:**
    ```
-   /cs2-edit hacé un edit
+   /cs2-pack
    ```
-   No hace falta nada más: Claude crea `projects/<nombre_de_la_canción>/`, copia los clips (los originales no se tocan) y arranca.
+   (o "hacé un edit", o adjuntá los archivos en el chat). No hace falta nada más: Claude crea `projects/<nombre_de_la_canción>/`, copia los clips (los originales no se tocan) y arranca. Sale el paquete completo (edit, shorts, miniatura y textos); para solo el video largo, pedí "solo el edit".
 3. **Respondé lo que no se puede detectar solo.** Claude no puede escuchar la canción, así que puede preguntarte en qué momentos hay golpes de voz tipo "bang bang" o qué arma es en una play dudosa. Todo lo demás lo decide solo y te lo cuenta al final.
 4. **Esperá el render.** Claude revisa previews de los momentos clave antes del render completo, renderiza en segundo plano y lee el chequeo final.
-5. **Mirá el video** en `output/<nombre>.mp4`.
+5. **Mirá el resultado** en `output/<nombre>_pack/` (o `output/<nombre>.mp4` si pediste solo el edit).
 
 ### Corregir
 Pedí los cambios con los minutos del video, como se lo dirías a un editor:
@@ -124,8 +124,8 @@ Claude ubica cada minuto con `engine/locate.py` (qué clip, qué kill, qué tran
 
 | Skill | Para qué |
 |---|---|
-| `cs2-edit` | **Por defecto.** Arma, corrige y renderiza el edit. Reglas de corte, visibilidad, drops, efectos, texto y audio. |
-| `cs2-pack` | Todo en uno: edit + shorts + miniatura + textos de YouTube y redes, en una carpeta de entrega. |
+| `cs2-edit` | Arma, corrige y renderiza el edit largo (la usa `cs2-pack`). Reglas de corte, visibilidad, drops, efectos, texto y audio. |
+| `cs2-pack` | **Por defecto.** Todo en uno: edit + shorts + miniatura + textos de YouTube y redes, en una carpeta de entrega. |
 | `clip-catalog` | Guarda cada clip verificado una vez (kills, disparos, arma, mapa, puntaje, dónde se usó) para no volver a revisarlo. |
 | `cs2-short` | Short vertical 9:16 a partir del edit terminado. |
 | `yt-publish` | Miniatura, título, descripción con capítulos, tags y aviso de derechos de la canción. |

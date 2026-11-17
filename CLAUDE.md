@@ -4,8 +4,9 @@ Este proyecto arma montajes de CS2 con música (estilo WAKO TV) y los renderiza 
 (Ryzen 5 7600X, 32 GB, RX 7900 XT). Todo corre local: análisis, render y exportación.
 
 ## Cómo se pide un video
-El usuario escribe `/cs2-edit` (o "hacé un edit") y deja los clips y la canción en una carpeta.
-Seguí el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md` de punta a punta. Resumen del flujo:
+El usuario adjunta o deja los clips y la canción (o escribe `/cs2-pack`, `/cs2-edit`, "hacé un edit").
+**Por defecto se hace el paquete completo** con `.claude/skills/cs2-pack/SKILL.md`: edit largo + shorts + miniatura + textos.
+El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md` de punta a punta. Resumen del flujo:
 
 1. Crear `projects/<nombre>/` con `clips/c1.mp4, c2.mp4, ...` (copias, nunca mover los originales del usuario),
    `clips_map.txt`, `song.mp3` y opcionalmente `logo.png` (si no, se usa `engine/assets/logo.png`).
@@ -31,8 +32,8 @@ Seguí el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md` de punta a p
 ## Skills del proyecto
 | Skill | Cuándo |
 |---|---|
-| `cs2-edit` | **Por defecto.** Siempre que haya clips + canción, "hacé un edit", o cambios a un edit ya hecho. |
-| `cs2-pack` | **Todo en uno** (`/cs2-pack`, "hacé todo", "el paquete completo"): edit + 2-4 shorts + miniatura + textos de YouTube y redes, en `output/<nombre>_pack/`. Encadena las demás skills. |
+| `cs2-pack` | **Por defecto** cuando llegan clips + canción, `/cs2-pack`, "hacé un edit", "hacé todo": edit + 2-4 shorts + miniatura + textos de YouTube y redes, en `output/<nombre>_pack/`. Encadena las demás skills. |
+| `cs2-edit` | Las reglas del edit (siempre se cargan, también dentro de `cs2-pack`). Sola, solo si el usuario pide **únicamente** el video largo ("solo el edit", `/cs2-edit`) o para corregir un edit ya hecho. |
 | `clip-catalog` | Elegir plays, ver qué clips ya se usaron o están verificados, cargar clips nuevos. Lo usa `cs2-edit`. |
 | `cs2-short` | Short vertical 9:16 (TikTok, Reels, Shorts) a partir de un edit terminado. |
 | `yt-publish` | Miniatura, título, descripción con capítulos y tags para subir un edit a YouTube. |
@@ -48,13 +49,15 @@ Seguí el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md` de punta a p
   de ellas tomá solo las reglas de edición, nunca las partes de entorno, hardware o entrega.
 
 ## Arranque automático (el usuario solo adjunta clips y canción)
-- Si el usuario adjunta clips y una canción en el chat, o dice "hacé un edit" sin más, **arrancá sin preguntar**:
-  los archivos están en lo que adjuntó, en la carpeta que nombró o, si no dio ninguna, en `entrada/`.
+- Si el usuario adjunta clips y una canción en el chat, o dice "hacé un edit" sin más, **arrancá sin preguntar con
+  `cs2-pack`** (pedido del usuario del 17/11/2026: siempre el paquete completo, no solo el video largo).
+  Los archivos están en lo que adjuntó, en la carpeta que nombró o, si no dio ninguna, en `entrada/`.
   Elegí el nombre del proyecto a partir del título de la canción (minúsculas, guiones bajos).
-- Cargá **los dos skills** al empezar: `cs2-edit` del proyecto (flujo y preferencias del canal) y
+- Solo el video largo si lo pide explícitamente ("solo el edit", "sin shorts", `/cs2-edit`).
+- Cargá al empezar: `cs2-pack`, `cs2-edit` del proyecto (flujo y preferencias del canal) y
   `anthropic-skills:montage-editing-craft` (criterio general de edición). Si chocan, manda `cs2-edit`.
-- Solo frená para preguntar lo que el skill pide confirmar (golpes vocales tipo "bang bang", frases épicas sí/no,
-  armas dudosas). Todo lo demás: decidí vos y avisá al final.
+- Solo frená para preguntar lo que el skill pide confirmar (golpes vocales tipo "bang bang", armas dudosas, artista de
+  la canción si el mp3 no lo trae), todo junto en un mensaje al principio. Todo lo demás: decidí vos y avisá al final.
 - Al terminar, no borres nada de `entrada/`: esos archivos son del usuario.
 
 ## Comandos largos

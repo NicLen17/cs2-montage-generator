@@ -1,11 +1,11 @@
 ---
 name: "cs2-pack"
-description: "Todo en uno: con los clips y la canción arma el edit para YouTube, 2 a 4 shorts verticales para TikTok, Instagram Reels y YouTube Shorts, la miniatura, los textos de cada plataforma y una carpeta de entrega lista para subir, con un solo pedido. Usala cuando el usuario escriba /cs2-pack o pida 'hacé todo', 'el paquete completo', 'edit + shorts + miniatura', 'todo el contenido', 'para YouTube y redes'."
+description: "Skill POR DEFECTO del proyecto wako-edits cuando llegan clips y una canción: arma el edit para YouTube, 2 a 4 shorts verticales para TikTok, Instagram Reels y YouTube Shorts, la miniatura, los textos de cada plataforma y una carpeta de entrega lista para subir, con un solo pedido. Usala SIEMPRE que el usuario adjunte o deje clips (.mp4) y una canción (en el chat, en entrada/ o en una carpeta), escriba /cs2-pack, diga 'hacé un edit', 'hacé todo', 'el paquete completo' o 'para YouTube y redes'. Solo si pide únicamente el video largo ('solo el edit', 'sin shorts', /cs2-edit) se usa cs2-edit sola."
 ---
 
 # Paquete completo: edit + shorts + miniatura + textos
 
-Un solo pedido y sale todo el contenido de un video. Esta skill **no tiene reglas propias de edición**: encadena las otras skills del proyecto y cada paso sigue la suya.
+Un solo pedido y sale todo el contenido de un video. **Es el arranque por defecto** cuando el usuario manda clips y canción (lo pidió así: siempre el paquete completo). Esta skill **no tiene reglas propias de edición**: encadena las otras skills del proyecto y cada paso sigue la suya.
 
 | Paso | Skill que manda | Resultado |
 |---|---|---|

@@ -1,6 +1,6 @@
 ---
 name: "cs2-edit"
-description: "Skill por defecto del proyecto wako-edits: arma, corrige y renderiza en esta PC (GPU local) montajes de CS2 estilo WAKO TV con cortes al beat, efectos de kill, transiciones con luz, intro con logo y cierre con reacción. Usala SIEMPRE que el usuario adjunte o deje clips (.mp4) y una canción (en el chat, en entrada/ o en una carpeta), escriba /cs2-edit, diga 'hacé un edit', 'armá un montaje', 'otro video', o pida cambiar algo de un edit ya hecho ('en el 1:23 no se ve la kill', 'subí el juego', 'hacé una v4'). Es la versión que evoluciona: usala en lugar de anthropic-skills:cs2-edit."
+description: "Reglas y flujo del edit largo del proyecto wako-edits: arma, corrige y renderiza en esta PC (GPU local) montajes de CS2 estilo WAKO TV con cortes al beat, efectos de kill, transiciones con luz, intro con logo y cierre con reacción. Se carga siempre que se arma un video (también dentro de cs2-pack, que es el arranque por defecto cuando llegan clips y canción). Usala sola cuando el usuario pida solo el video largo ('solo el edit', 'sin shorts', /cs2-edit) o cambios a un edit ya hecho ('en el 1:23 no se ve la kill', 'subí el juego', 'hacé una v4'). Usala en lugar de anthropic-skills:cs2-edit."
 ---
 
 # CS2 Edit — montaje de plays estilo WAKO TV
