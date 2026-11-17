@@ -48,7 +48,30 @@ yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 RR = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2)
 VIGN = np.clip(1 - 0.26 * np.clip(RR - 0.6, 0, None) ** 1.5, 0, 1)[..., None].astype(np.float32)
 DIST = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
+
+# ---------- GPU (OpenCL en la Radeon) ----------
+# Las operaciones pesadas por cuadro (color, bloom, zoom, desenfoques) corren en la GPU con OpenCL vía cv2.UMat.
+# WAKO_GPU=0 fuerza la CPU (mismo resultado, más lento). Si no hay OpenCL, se usa la CPU sola.
+USE_GPU = os.environ.get('WAKO_GPU', '1') != '0' and cv2.ocl.haveOpenCL()
+# Efectos sueltos en la GPU (bloom, zoom, desenfoques con ida y vuelta a la RAM): medido, no conviene con 10 procesos
+# (cada viaje de 25 MB cuesta más de lo que ahorra). Solo los cuadros planos van enteros a la GPU. WAKO_GPU_FX=1 los activa.
+GPU_FX = USE_GPU and os.environ.get('WAKO_GPU_FX', '0') == '1'
+if USE_GPU:
+    cv2.ocl.setUseOpenCL(True)
+    VIGN3_U = cv2.UMat(np.ascontiguousarray(np.repeat(VIGN, 3, axis=2)))
+U = cv2.UMat
+_KEEP_U = False
+def _f32(u): return cv2.addWeighted(u, 1.0, u, 0.0, 0.0, dtype=cv2.CV_32F)
+def _scale(u, k): return cv2.addWeighted(u, float(k), u, 0.0, 0.0)
+def _bloom_u(fu, amount, thresh):
+    sm = cv2.resize(fu, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
+    hi = cv2.subtract(sm, (float(thresh),) * 3 + (0.0,))
+    _, hi = cv2.threshold(hi, 0, 0, cv2.THRESH_TOZERO)
+    hi = _scale(hi, 255 / (255 - thresh))
+    g = cv2.addWeighted(cv2.GaussianBlur(hi, (0, 0), 8), 1.0, cv2.GaussianBlur(hi, (0, 0), 26), 0.8, 0.0)
+    return cv2.addWeighted(fu, 1.0, cv2.resize(g, (W, H), interpolation=cv2.INTER_LINEAR), float(amount), 0.0)
 def bloom(f, amount, thresh=185):
+    if GPU_FX: return _bloom_u(U(np.ascontiguousarray(f, np.float32)), amount, thresh).get()
     sm = cv2.resize(f, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
     hi = np.clip(sm - thresh, 0, None) * (255 / (255 - thresh))
     g = cv2.GaussianBlur(hi, (0, 0), 8) + 0.8 * cv2.GaussianBlur(hi, (0, 0), 26)
@@ -62,6 +85,13 @@ def streak(f, amount, tint):
     s1 = s1 / max(1.0, float(s1.max()) * 1.6)
     return f + cv2.resize(s1 * tint, (W, H), interpolation=cv2.INTER_LINEAR) * amount * 120
 def grade(f8):
+    if _KEEP_U or GPU_FX:
+        u = cv2.LUT(U(f8), LUT)
+        h_, s_, v_ = cv2.split(cv2.cvtColor(u, cv2.COLOR_BGR2HSV))
+        u = cv2.cvtColor(cv2.merge([h_, cv2.convertScaleAbs(s_, alpha=1.15), v_]), cv2.COLOR_HSV2BGR)
+        u = cv2.addWeighted(u, 1.25, cv2.GaussianBlur(u, (0, 0), 1.2), -0.25, 0)
+        r = cv2.multiply(_bloom_u(_f32(u), 0.10, 205), VIGN3_U)
+        return r if _KEEP_U else r.get()
     f = cv2.LUT(f8, LUT)
     hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV)
     hsv[..., 1] = cv2.convertScaleAbs(hsv[..., 1], alpha=1.15)
@@ -74,13 +104,28 @@ def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
         hw, hh = W / (2 * s), H / (2 * s); cx = min(max(cx, hw), W - hw); cy = min(max(cy, hh), H - hh)
     if abs(s - 1) < 1e-4 and abs(cx - W / 2) < .5 and abs(cy - H / 2) < .5 and dx == 0 and dy == 0: return f
     M = np.float32([[s, 0, W / 2 - s * cx + dx], [0, s, H / 2 - s * cy + dy]])
+    if GPU_FX and not isinstance(f, cv2.UMat):
+        return cv2.warpAffine(U(np.ascontiguousarray(f, np.float32)), M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT).get()
     return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
 def zoom(f, z, dx=0, dy=0): return affine(f, z, W / 2, H / 2, dx, dy, clamp=False)
-def shift(f, dx): return cv2.warpAffine(f, np.float32([[1, 0, dx], [0, 1, 0]]), (W, H), borderMode=cv2.BORDER_REFLECT)
+def shift(f, dx):
+    M = np.float32([[1, 0, dx], [0, 1, 0]])
+    if GPU_FX: return cv2.warpAffine(U(np.ascontiguousarray(f, np.float32)), M, (W, H), borderMode=cv2.BORDER_REFLECT).get()
+    return cv2.warpAffine(f, M, (W, H), borderMode=cv2.BORDER_REFLECT)
 def hblur(f, L):
-    L = int(L); return f if L < 3 else cv2.blur(f, (L, 1), borderType=cv2.BORDER_REFLECT)
+    L = int(L)
+    if L < 3: return f
+    if GPU_FX: return cv2.blur(U(np.ascontiguousarray(f, np.float32)), (L, 1), borderType=cv2.BORDER_REFLECT).get()
+    return cv2.blur(f, (L, 1), borderType=cv2.BORDER_REFLECT)
 def radial_blur(f, strength, n=5):
     if strength < 0.004: return f
+    if GPU_FX:      # los n zooms se suman en la GPU sin ir y volver a la RAM
+        fu = U(np.ascontiguousarray(f, np.float32)); acc = fu
+        for i in range(1, n):
+            z = 1 + strength * i / (n - 1)
+            M = np.float32([[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]])
+            acc = cv2.add(acc, cv2.warpAffine(fu, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT))
+        return _scale(acc, 1.0 / n).get()
     acc = f.copy()
     for i in range(1, n): acc += zoom(f, 1 + strength * i / (n - 1))
     return acc / n
@@ -344,9 +389,26 @@ SH = np.random.default_rng(5).normal(0, 1, (N + 10, 2))
 ACE_TINTS = [(255, 220, 120), (230, 120, 255), (120, 210, 255), (255, 160, 200), (255, 240, 220)]
 ace_idx = {i: j for j, i in enumerate([i for i, (k, c) in enumerate(zip(kills, kill_play)) if c == ACE_CLIP])}
 
+def _plain(t, S):
+    if not USE_GPU or os.environ.get('WAKO_FAST', '1') == '0': return False
+    if S['kind'] != 'play' or (S['play'] == 100 and t < O_DROP2) or t > TOTAL - 0.5: return False
+    for ob, typ, bi in boundaries:
+        if (typ in TW and abs(t - ob) < TW[typ]) or (typ == 'black_in' and ob - 1.4 <= t < ob): return False
+    for ko in kills:
+        if -0.017 <= t - ko <= 0.7: return False
+    for o, spr in CAPS:
+        if -0.1 <= t - o <= 1.7: return False
+    if WORDS or PHRASES: return False
+    return True
 def render(n):
+    global _KEEP_U
     t = n / FPS
     S = segments[seg_index(t)]; f = None
+    if _plain(t, S):        # todo en la GPU y vuelve el cuadro terminado en 8 bits
+        _KEEP_U = True
+        try: u = grade(frame(S, t, 0))
+        finally: _KEEP_U = False
+        return cv2.convertScaleAbs(u, alpha=1.0, beta=-0.5).get()   # -0.5: trunca como el astype de la CPU
     for ob, typ, bi in boundaries:
         if typ in TW and abs(t - ob) < TW[typ]:
             w = TW[typ]; p = (t - (ob - w)) / (2 * w)
@@ -447,7 +509,11 @@ def render(n):
     if t > TOTAL - 0.5: f *= max(0, (TOTAL - t) / 0.5)
     return np.clip(f, 0, 255).astype(np.uint8)
 
-if mode == 'preview':
+if mode == 'raw':     # prueba: guarda cuadros a resolución completa sin comprimir (comparar CPU vs GPU)
+    os.makedirs(sys.argv[3], exist_ok=True)
+    for tt in sys.argv[2].split(','):
+        np.save(os.path.join(sys.argv[3], f'{float(tt):07.2f}.npy'), render(int(float(tt) * FPS)))
+elif mode == 'preview':
     for tt in sys.argv[2].split(','):
         os.makedirs('previews', exist_ok=True); cv2.imwrite(f'previews/pv_{float(tt):06.2f}.jpg', cv2.resize(render(int(float(tt) * FPS)), (640, 360)))
 else:

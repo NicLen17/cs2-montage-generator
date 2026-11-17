@@ -11,6 +11,13 @@
 - Repeticiones de sílabas: ataques vocales seguidos con timbre parecido sobre la voz separada (`vocal_reps.py` de `projects/my_jealousy_v2`).
 
 ## Imagen (`render.py`)
+- **GPU:** los cuadros "planos" (`_plain()`: play sin transición, sin efecto de kill, sin texto ni fundido) van enteros a la GPU
+  (`grade()` con `_KEEP_U`, OpenCL vía `cv2.UMat`) y bajan en uint8. El resto de los cuadros, en CPU. `WAKO_GPU=0` fuerza CPU.
+  Las versiones GPU de `bloom()`, `affine()`, `shift()`, `hblur()` y `radial_blur()` existen pero están apagadas
+  (`WAKO_GPU_FX=1` las prende): con 10 procesos, ir y volver a la VRAM con cuadros float32 (25 MB) fue más lento.
+- Medido en my_jealousy_v3 (video completo, `build.py`): CPU 355 s · GPU en todo 357 s · híbrido (actual) 295 s. PSNR 47 dB.
+- Todo efecto nuevo debe dar lo mismo en los dos modos: comparalo con `render.py <proyecto> raw t1,t2,... <carpeta>`
+  corriendo con `WAKO_GPU=0` y sin él (PSNR ≥ 45 dB). Si un cuadro con el efecto nuevo puede ser "plano", sumalo a `_plain()`.
 - Lectores perezosos por clip, que se reabren al saltar. Modo `preview t1,t2,...` que guarda JPG de 640×360.
 - **Color:** curva en S (`0.42*sigmoide + 0.58*lineal`), sombras frías y luces cálidas, saturación ×1.15, enfoque suave (`1.25*f − 0.25*blur(1.2)`), bloom leve (umbral 205), viñeta suave y un 30 % del cuadro anterior como motion blur leve.
 - **Transiciones:** `whip_lr`/`whip_rl` (desplazamiento del 55 % del ancho, desenfoque horizontal de hasta 240 px, ±0.13 s), `light` (bloom y luz que cruza de izquierda a derecha, ±0.17 s), `zoom` (desenfoque radial, ±0.13 s), versiones cortas dentro de una play (`whip_short` ±0.075, `light_short` ±0.085), `black_in` (±0.70), `cut`.

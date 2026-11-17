@@ -1,6 +1,6 @@
 # WAKO Edits — montajes de CS2 con Claude Code, renderizados en tu PC
 
-Dejás tus clips de Twitch y una canción, escribís `/cs2-edit hacé un edit`, y Claude Code arma un montaje estilo **WAKO TV**: cortes al beat, una kill en cada drop, efectos sutiles en las kills, transiciones con luz, intro con logo y cierre con la reacción del streamer. Todo corre en tu computadora: análisis de la música, detección de kills, render en paralelo con la GPU y exportación.
+Dejás tus clips de Twitch y una canción, escribís `/cs2-pack`, y Claude Code arma un montaje estilo **WAKO TV**: cortes al beat, una kill en cada drop, efectos sutiles en las kills, transiciones con luz, intro con logo y cierre con la reacción del streamer. Todo corre en tu computadora: análisis de la música, detección de kills, render en paralelo con la GPU y exportación.
 
 ## Resultado
 
@@ -21,7 +21,7 @@ Lo que hace el proyecto en cada video:
 - **Clips:** detecta las kills propias en el killfeed y el instante exacto del disparo en el audio. Claude las verifica a ojo con hojas de cuadros.
 - **Plan:** cada kill importante cae exactamente en un golpe (0 ms), cada drop arranca con una kill digna, y ninguna kill queda tapada por una transición ni cortada.
 - **Chequeos automáticos:** visibilidad de cada kill y tiempos muertos antes de renderizar; tirones, 60 fps, duración y volumen después.
-- **Render:** pedazos de 6 s en paralelo con todos los núcleos, codificados con la GPU (AMD AMF / NVIDIA NVENC / Intel QSV, o CPU si no hay). Las correcciones solo vuelven a renderizar lo que cambió.
+- **Render:** pedazos de 6 s en paralelo con todos los núcleos; los cuadros sin efectos se procesan enteros en la GPU con OpenCL (un 17 % más rápido que solo CPU), y la codificación también va a la GPU (AMD AMF / NVIDIA NVENC / Intel QSV, o CPU si no hay). Las correcciones solo vuelven a renderizar lo que cambió.
 
 ## Cómo funciona
 

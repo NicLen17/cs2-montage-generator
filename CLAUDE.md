@@ -68,6 +68,11 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 ## Hardware y velocidad
 - `engine/build.py` divide el video en pedazos de 6 s y los renderiza en paralelo (núcleos lógicos − 2 procesos).
 - Codifica con la GPU si está disponible (AMD AMF en la RX 7900 XT); si no, con la CPU. Ver: `python engine/encoders.py`.
+- **GPU en el render (OpenCL):** los cuadros "planos" (play sin transición, sin efecto de kill, sin texto ni fundido; más de
+  la mitad del video) se procesan enteros en la Radeon (color, nitidez, bloom, viñeta) y vuelven terminados en 8 bits.
+  Los cuadros con efectos siguen en la CPU: mandarlos a la GPU y traerlos de vuelta cuesta más de lo que ahorra.
+  Medido en my_jealousy_v3: 355 s → 295 s el video completo, mismo resultado (PSNR 47 dB). La CPU sigue al ~100 %
+  durante el render (es lo esperado). `WAKO_GPU=0` fuerza todo en CPU.
 - **Caché de pedazos:** al corregir, solo se vuelven a renderizar los pedazos cuyo contenido cambió. Una corrección chica tarda segundos o pocos minutos.
 - Si un render falla por memoria, bajar `--workers`.
 
