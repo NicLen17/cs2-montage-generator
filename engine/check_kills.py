@@ -91,6 +91,8 @@ def dead_time(p, segs, plays, bound_at, chain):
 
 
 def main():
+    try: sys.stdout.reconfigure(encoding='utf-8')
+    except Exception: pass
     project = os.path.abspath(sys.argv[1])
     p = load_plan(project)
     segs = [s for s in p.segments if s['kind'] in VIS]
