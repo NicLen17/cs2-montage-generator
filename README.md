@@ -94,7 +94,7 @@ Con los clips y la canción en `entrada/` (o adjuntos en el chat), un solo pedid
 | `redes.md` | texto y hashtags de cada short para cada plataforma, y en qué orden publicarlos |
 | `LEEME.md` | qué subir a cada lado |
 
-Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan el doble). Claude solo frena para preguntar lo que no puede detectar (golpes de voz de la canción, armas dudosas), todo en un mensaje al principio.
+Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan el doble). Claude solo frena para preguntar lo que no puede detectar (armas dudosas, algún golpe de voz de la canción), todo en un mensaje al principio.
 
 ## Tu primer edit (paso a paso)
 
@@ -104,7 +104,7 @@ Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan e
    /cs2-pack
    ```
    (o "hacé un edit", o adjuntá los archivos en el chat). No hace falta nada más: Claude crea `projects/<nombre_de_la_canción>/`, copia los clips (los originales no se tocan) y arranca. Sale el paquete completo (edit, shorts, miniatura y textos); para solo el video largo, pedí "solo el edit".
-3. **Respondé lo que no se puede detectar solo.** Claude no puede escuchar la canción, así que puede preguntarte en qué momentos hay golpes de voz tipo "bang bang" o qué arma es en una play dudosa. Todo lo demás lo decide solo y te lo cuenta al final.
+3. **Respondé lo que no se puede detectar solo.** Claude no puede escuchar la canción, así que puede preguntarte qué arma es en una play dudosa o confirmar algún golpe de voz de la canción. Todo lo demás lo decide solo y te lo cuenta al final.
 4. **Esperá el render.** Claude revisa previews de los momentos clave antes del render completo, renderiza en segundo plano y lee el chequeo final.
 5. **Mirá el resultado** en `output/<nombre>_pack/` (o `output/<nombre>.mp4` si pediste solo el edit).
 

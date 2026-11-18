@@ -64,7 +64,7 @@ Usá estas claves. `plan` son variables que `plan.py` ya entiende y se copian ta
   "choques_con_cs2_edit": ["la referencia acelera el gameplay x1.5 → no se hace (regla fija), se compensa con cortes más cortos"]
 }
 ```
-- Valores válidos: transiciones `whip_lr`, `whip_rl`, `light`, `zoom` (`mega` se pone por play con `tin='mega'`, `cut` es solo para el bang bang); efectos de kill `bloom`, `chroma_zoom`, `shake_blur`, `flash`, `radial_zoom`, `pop`. Si la referencia usa algo que no está en estas listas, va en `motor_nuevo`.
+- Valores válidos: transiciones `whip_lr`, `whip_rl`, `light`, `zoom` (`mega` se pone por play con `tin='mega'`); efectos de kill `bloom`, `chroma_zoom`, `shake_blur`, `flash`, `radial_zoom`, `pop`. Si la referencia usa algo que no está en estas listas, va en `motor_nuevo`.
 - `leads` se traduce a los `lead` de cada tramo del plan, **sin bajar nunca de los mínimos de visibilidad de `cs2-edit` §3**.
 
 ## 4. Recrear con los clips del usuario

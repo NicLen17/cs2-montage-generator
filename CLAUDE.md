@@ -14,7 +14,7 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    en otros edits traen sus kills y no se vuelven a verificar.
 2. `python engine/analyze_song.py projects/<nombre>` → BPM, drops, cortes de batería, golpes vocales.
    Separar voz y música (`python -m demucs --two-stems=vocals -n htdemucs -o stems song.mp3`) para el mapa de secciones,
-   los golpes de voz ("stop") y las repeticiones de sílabas.
+   y los golpes de voz aislados ("stop").
 3. `python engine/analyze_clips.py projects/<nombre>` → mirar `sheets/*.jpg`, corregir `kf.json` (kills propias reales,
    verificadas a ojo), después `python engine/analyze_clips.py projects/<nombre> --shots` y
    `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo).
@@ -56,7 +56,7 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 - Solo el video largo si lo pide explícitamente ("solo el edit", "sin shorts", `/cs2-edit`).
 - Cargá al empezar: `cs2-pack`, `cs2-edit` del proyecto (flujo y preferencias del canal) y
   `anthropic-skills:montage-editing-craft` (criterio general de edición). Si chocan, manda `cs2-edit`.
-- Solo frená para preguntar lo que el skill pide confirmar (golpes vocales tipo "bang bang", armas dudosas, artista de
+- Solo frená para preguntar lo que el skill pide confirmar (armas dudosas, golpes de voz aislados si hay dudas, artista de
   la canción si el mp3 no lo trae), todo junto en un mensaje al principio. Todo lo demás: decidí vos y avisá al final.
 - Al terminar, no borres nada de `entrada/`: esos archivos son del usuario.
 

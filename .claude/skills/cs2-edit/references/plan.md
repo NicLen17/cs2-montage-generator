@@ -3,12 +3,12 @@
 **Leé este archivo entero antes de escribir o modificar un `plan.py`.** Las reglas de edición (qué mostrar, mínimos, drops) están en `SKILL.md`; acá está cómo se expresan en el plan.
 
 ## Punto de partida
-Copiá **`projects/my_jealousy_v3/plan.py`** (el plan más completo: apertura con varias kills, `kill_at` en drops, ráfagas `burst`, golpes secos) y cambiá solo los datos: canción (`SONG_TITLE`, `SONG_A0`, `IDX_DROP`, `I_DROP2`, `MEGA_AT`), `ACT1`/`ACT2`, `CAM`, `OPEN_CLIP`/`END_CLIP`/`ACE_CLIP`, ráfagas y títulos.
+Copiá **`projects/my_jealousy_v3/plan.py`** (el plan más completo: apertura con varias kills, `kill_at` en drops, golpes secos) y cambiá solo los datos: canción (`SONG_TITLE`, `SONG_A0`, `IDX_DROP`, `I_DROP2`, `MEGA_AT`), `ACT1`/`ACT2`, `CAM`, `OPEN_CLIP`/`END_CLIP`/`ACE_CLIP` y títulos. **Ojo:** ese plan trae dos efectos que fueron pedidos especiales de "My Jealousy" (las ráfagas `B1`/`B2` en las sílabas de "jea-lou-sy" y su `VOC`): no los copies a un plan nuevo salvo que el usuario los pida.
 
 ## Formato de una play
 ```python
 dict(clip, segs=[(kill_idx, src_end, lead, [kills]), ...], cap, tin, flash, hard, tech, slowmo=(a, b, dur),
-     bang=(tA, tB, kA, kB, fin, [extras]), ctx={i: (pre_max, post_max)}, kill_at=song_t, kill_at_seg={i: song_t},
+     ctx={i: (pre_max, post_max)}, kill_at=song_t, kill_at_seg={i: song_t},
      start_at=song_t, smax={i: max_src_start}, beats=[{0}, {1, 3}, ...])
 ```
 - `segs`: cada tramo es `(kill clave, fin en el clip, lead pedido, kills que muestra)`.
@@ -31,11 +31,16 @@ dict(clip, segs=[(kill_idx, src_end, lead, [kills]), ...], cap, tin, flash, hard
 
 ## Casos especiales
 - **Cámara lenta:** `slowmo=(a, b, dur)` empieza exactamente donde termina el tramo (`src_end` = inicio de la cámara lenta); si no, repite cuadros. `SLOWMO_SRC = {clip: (archivo, t0)}` y `build.py` la genera.
-- **Ráfagas:** `dict(burst=[(clip, kill), ...], at=[tiempos de canción], pre=0.14, sync=VOC, fx='burst', tail=0.95, cap=None)`. `fx=False` usa los efectos normales (o los de ACE si el clip es `ACE_CLIP`); `sync=0.0` para golpes secos de la música en vez de sílabas (`pre=0.25`). La primera entrada es la kill del clip que viene antes.
-- **Bang bang:** `bang=(tA, tB, kA, kB, fin, [extras])`: kill A en el primer golpe, corte seco, kill B en el segundo.
+- **Golpes secos después del interludio:** una kill de la misma play en cada golpe, sin mostrar el viaje entre kills:
+  `dict(burst=[(clip, 0), (clip, 1), ...], at=[golpes en tiempo de canción], pre=0.25, sync=0.0, fx=False, tail=0.9, cap=(...))`.
 - `CAM = {clip: (x0, y0, x1, y1)}` solo para `OPEN_CLIP` y `END_CLIP`, medida en cada clip. `ACE_CLIP` es uno solo (el que recibe los golpes fuertes de ACE): elegí el del segundo drop.
 - `FRANTIC = [(song_a, song_b), ...]`: tramos frenéticos (los techos de tiempo muerto se multiplican por 0.75).
 - `PHRASES` y `WORDS` quedan vacíos (el usuario dio de baja las frases).
+
+## Pedidos especiales (solo si el usuario los pide para ese video)
+No son parte del estilo: fueron efectos atados a una canción puntual. El motor los sigue soportando:
+- **Cortes dobles en un golpe vocal** ("bang bang"): `bang=(tA, tB, kA, kB, fin, [extras])` en la play: kill A en el primer golpe, corte seco, kill B en el segundo. `analyze_song.py` lista pares de golpes vocales candidatos.
+- **Una kill por sílaba repetida** ("jealousy, jealousy"): `dict(burst=[(clip, kill), ...], at=[sílabas], pre=0.14, sync=VOC, fx='burst', tail=0.95)`, con kills de clips distintos y efecto casi nulo (`fx='burst'`). Detección de sílabas: `projects/my_jealousy_v2/vocal_reps.py`.
 
 ## Versiones
 Para cada video grande nuevo hacé una carpeta de versión (`<nombre>_v2`, `_v3`): la anterior queda intacta para comparar.

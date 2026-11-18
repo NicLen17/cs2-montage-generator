@@ -19,7 +19,7 @@ Antes de empezar, cargá `cs2-edit` (es la que tiene las reglas del canal) y `an
 
 ## Reglas de la corrida
 - **Arrancá sin preguntar**, igual que `cs2-edit`: los archivos están en lo que el usuario adjuntó, en la carpeta que nombró o en `entrada/`.
-- **Las únicas preguntas son las de `cs2-edit`** (golpes vocales tipo "bang bang", armas dudosas) y el artista de la canción si el mp3 no lo trae. Juntalas en **un solo mensaje al principio**, apenas termines el análisis de la canción y de los clips, para que el resto corra sin frenar. Si el usuario no está, seguí con lo detectable y avisá al final qué quedó sin confirmar.
+- **Las únicas preguntas son las de `cs2-edit`** (armas dudosas, golpes de voz aislados si hay dudas) y el artista de la canción si el mp3 no lo trae. Juntalas en **un solo mensaje al principio**, apenas termines el análisis de la canción y de los clips, para que el resto corra sin frenar. Si el usuario no está, seguí con lo detectable y avisá al final qué quedó sin confirmar.
 - **Todo lo demás lo decidís vos** (plays, cantidad de shorts, tipo de miniatura, textos) y lo contás al final.
 - **Calidad antes que velocidad:** cada paso conserva sus chequeos (`check_kills` limpio, previews, `check_render.txt`, hojas de los shorts, comparación de miniaturas). No te saltees ninguno por ser una corrida larga.
 - Los comandos largos (render, shorts) van **en segundo plano**; mientras corren, avanzá con lo que no depende de ellos.

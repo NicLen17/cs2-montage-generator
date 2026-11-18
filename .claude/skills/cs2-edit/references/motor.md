@@ -7,8 +7,7 @@
 - Grilla regular (`polyfit` robusto con recorte de outliers) sobre `hits`; `TGT = where(|hits-grid| < 30 ms, hits, grid)`.
 - Mapa de bombo por beat: energía < 130 Hz.
 - Momentos vocales fuertes: envolvente armónica (HPSS, 300-3000 Hz).
-- Golpes vocales dobles: picos vocales de a pares separados 0.12-0.32 s.
-- Repeticiones de sílabas: ataques vocales seguidos con timbre parecido sobre la voz separada (`vocal_reps.py` de `projects/my_jealousy_v2`).
+- Golpes vocales dobles (pares separados 0.12-0.32 s) y repeticiones de sílabas (`projects/my_jealousy_v2/vocal_reps.py`): solo para pedidos especiales (ver `plan.md`).
 
 ## Imagen (`render.py`)
 - **GPU:** los cuadros "planos" (`_plain()`: play sin transición, sin efecto de kill, sin texto ni fundido) van enteros a la GPU
