@@ -61,7 +61,7 @@ git clone https://github.com/NicLen17/wako-edits.git
 
 Claude solo te pregunta lo que no puede detectar (un arma dudosa, algún golpe de la canción) y al final te deja todo en `output/<nombre>_pack/`:
 
-| | |
+| Sale | Qué es |
 |---|---|
 | 🎬 **YouTube** | el edit en 1920×1080 |
 | 📱 **Shorts** | 2 a 4 verticales para TikTok, Reels y YouTube Shorts, sin repetir tramos |
