@@ -1,172 +1,127 @@
-# WAKO Edits — montajes de CS2 con Claude Code, renderizados en tu PC
+<div align="center">
 
-Dejás tus clips de Twitch y una canción, escribís `/cs2-pack`, y Claude Code arma un montaje estilo **WAKO TV**: cortes al beat, una kill en cada drop, efectos sutiles en las kills, transiciones con luz, intro con logo y cierre con la reacción del streamer. Todo corre en tu computadora: análisis de la música, detección de kills, render en paralelo con la GPU y exportación.
+# WAKO Edits
 
-## Resultado
+**Montajes de CS2 al ritmo de la música, armados por Claude Code y renderizados en tu PC.**
 
-[![Ver el edit en YouTube](https://img.youtube.com/vi/ZxsmGS2iv9Q/maxresdefault.jpg)](https://youtu.be/ZxsmGS2iv9Q)
+Dejás los clips y una canción, escribís `/cs2-pack` y sale el edit para YouTube, los shorts, la miniatura y los textos.
 
-▶️ **[Ver el edit completo en YouTube](https://youtu.be/ZxsmGS2iv9Q)**
+![Claude Code](https://img.shields.io/badge/Claude_Code-skills-D97757?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![ffmpeg](https://img.shields.io/badge/ffmpeg-render-007808?style=flat-square&logo=ffmpeg&logoColor=white)
+![GPU](https://img.shields.io/badge/GPU-AMD_·_NVIDIA_·_Intel-ED1C24?style=flat-square)
+![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square)
 
-| Segundo drop (ráfaga de un ACE, una kill por golpe) | Miniatura generada por `yt-publish` (tipo `jugada`) |
-|---|---|
-| ![Vista previa del edit](docs/preview.gif) | ![Miniatura de ejemplo](docs/thumbnail_example.jpg) |
+<br>
 
-Los tres tipos de miniatura que genera `yt-publish` (`jugada`, `reaccion`, `limpia`), vistos al tamaño del celular. Salen del análisis de las miniaturas más vistas de canales de CS con éxito ([referencias](.claude/skills/yt-publish/references/miniaturas.md)):
+<a href="https://youtu.be/ZxsmGS2iv9Q"><img src="docs/hero.jpg" alt="Ver el edit en YouTube" width="820"></a>
 
-![Tipos de miniatura](docs/thumbnail_tipos.jpg)
+<sub>Miniatura generada por el proyecto · clic para ver el edit completo</sub>
 
-Lo que hace el proyecto en cada video:
-- **Música:** encuentra el BPM, el onset real de cada golpe (no el beat estimado), los drops, el corte de batería y los golpes de voz. Separa voz y música con Demucs.
-- **Clips:** detecta las kills propias en el killfeed y el instante exacto del disparo en el audio. Claude las verifica a ojo con hojas de cuadros.
-- **Plan:** cada kill importante cae exactamente en un golpe (0 ms), cada drop arranca con una kill digna, y ninguna kill queda tapada por una transición ni cortada.
-- **Chequeos automáticos:** visibilidad de cada kill y tiempos muertos antes de renderizar; tirones, 60 fps, duración y volumen después.
-- **Render:** pedazos de 6 s en paralelo con todos los núcleos; los cuadros sin efectos se procesan enteros en la GPU con OpenCL (un 17 % más rápido que solo CPU), y la codificación también va a la GPU (AMD AMF / NVIDIA NVENC / Intel QSV, o CPU si no hay). Las correcciones solo vuelven a renderizar lo que cambió.
+</div>
 
-## Cómo funciona
+<br>
 
-```mermaid
-flowchart LR
-    A[Clips + canción<br/>en entrada/] --> B[Catálogo de clips<br/>catalog.py]
-    B --> C[Análisis de la canción<br/>analyze_song.py + Demucs]
-    B --> D[Análisis de clips<br/>analyze_clips.py]
-    C --> E[plan.py<br/>cortes al beat]
-    D --> E
-    E --> F[check_kills.py<br/>visibilidad y ritmo]
-    F --> G[Previews<br/>build.py --preview]
-    G --> H[Render en paralelo + GPU<br/>build.py]
-    H --> I[check_render.py<br/>automático]
-    I --> J[output/edit.mp4]
-    J --> K[Short 9:16<br/>short.py]
-    J --> L[Miniatura y capítulos<br/>publish.py]
+## Qué hace
+
+<table>
+<tr>
+<td width="50%"><img src="docs/preview.gif" alt="Fragmento del edit"></td>
+<td>
+
+🎵 **Corta al golpe exacto** de la canción: BPM, drops y cortes de batería, con voz y música separadas.
+
+🎯 **Encuentra tus kills** en el killfeed y el disparo en el audio. Cada drop abre con una kill digna.
+
+✨ **Efectos con medida:** transiciones con luz, intro con logo y cierre con la reacción del streamer.
+
+⚡ **Renderiza en tu GPU**, en paralelo y con caché: corregir algo tarda segundos.
+
+</td>
+</tr>
+</table>
+
+Además arma las miniaturas en tres estilos, basados en las más vistas de canales de CS:
+
+![Tipos de miniatura](docs/miniaturas.jpg)
+
+## Cómo se usa
+
+```bash
+git clone https://github.com/NicLen17/wako-edits.git
 ```
 
-Claude Code sigue las reglas de edición del canal, que están en `.claude/skills/cs2-edit/` (qué mostrar de cada play, mínimos de visibilidad, drops, efectos, texto, audio). Los scripts de `engine/` hacen el trabajo pesado.
-
-## Requisitos
-
-| | |
-|---|---|
-| Sistema | Windows 10/11 (los scripts también corren en macOS/Linux con Python y ffmpeg) |
-| Python | 3.11 o más nuevo |
-| ffmpeg | en el PATH (`ffmpeg` y `ffprobe`) |
-| GPU | opcional: AMD (AMF), NVIDIA (NVENC) o Intel (QSV). Sin GPU codifica con la CPU |
-| Memoria | 16 GB o más recomendado (el render usa un proceso por núcleo) |
-| Claude Code | la [app de escritorio](https://claude.com/claude-code) o el CLI `claude` |
-
-Probado en un Ryzen 5 7600X, 32 GB y una RX 7900 XT: un edit de 2:30 se renderiza en pocos minutos, y una corrección chica en segundos.
-
-## Instalación
-
-1. Cloná el repo:
-   ```bash
-   git clone https://github.com/NicLen17/wako-edits.git
-   ```
-2. En Windows, doble clic en `setup_windows.bat`. Instala Python y ffmpeg con `winget`, las librerías de `requirements.txt` y Demucs (la primera vez descarga ~2 GB). Si te pide permisos, aceptá; al terminar, cerrá y volvé a abrir la terminal.
-
-   En otro sistema, o a mano:
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-   ```bash
-   python -m pip install demucs
-   ```
-3. Comprobá qué codificador vas a usar (con una Radeon tiene que decir `amf`):
-   ```bash
-   python engine/encoders.py
-   ```
-4. Abrí la carpeta en Claude Code (app de escritorio → Code → abrir carpeta, o `claude` en una terminal dentro de la carpeta).
-
-## Todo en uno: `/cs2-pack` (por defecto)
-
-Con los clips y la canción en `entrada/` (o adjuntos en el chat), un solo pedido arma todo el contenido del video. Es lo que pasa por defecto; si querés solo el video largo, pedí "solo el edit":
+1. **Instalá:** en Windows, doble clic en `setup_windows.bat` (Python, ffmpeg, librerías y Demucs).
+2. **Dejá los clips y la canción** en `entrada/` (clips `.mp4` a 1080p, canción `.mp3`, `.wav` o `.m4a`).
+3. **Abrí la carpeta en Claude Code** y pedí:
 
 ```
 /cs2-pack
 ```
 
-| Sale | Para |
+Claude solo te pregunta lo que no puede detectar (un arma dudosa, algún golpe de la canción) y al final te deja todo en `output/<nombre>_pack/`:
+
+| | |
 |---|---|
-| `01_youtube_<nombre>.mp4` | YouTube (1920×1080) |
-| `02_short1…4_<nombre>.mp4` | TikTok, Instagram Reels y YouTube Shorts (1080×1920), tramos que no se repiten entre sí |
-| `thumbnail.jpg` + opciones | miniatura del video largo |
-| `youtube.md` | títulos, descripción con capítulos, tags y aviso de Content ID |
-| `redes.md` | texto y hashtags de cada short para cada plataforma, y en qué orden publicarlos |
-| `LEEME.md` | qué subir a cada lado |
+| 🎬 **YouTube** | el edit en 1920×1080 |
+| 📱 **Shorts** | 2 a 4 verticales para TikTok, Reels y YouTube Shorts, sin repetir tramos |
+| 🖼️ **Miniatura** | en los tres estilos |
+| 📝 **Textos** | título, descripción con capítulos, tags y textos de cada red |
 
-Todo queda junto en `output/<nombre>_pack/` (los videos son enlaces, no ocupan el doble). Claude solo frena para preguntar lo que no puede detectar (armas dudosas, algún golpe de voz de la canción), todo en un mensaje al principio.
+**Para corregir**, decile los minutos como a un editor: *"en el 1:23 no se ve la tercera kill"*. Solo se vuelve a renderizar lo que cambió.
 
-## Tu primer edit (paso a paso)
+<details>
+<summary><b>Requisitos e instalación a mano</b></summary>
 
-1. **Dejá los archivos en `entrada/`:** los clips `.mp4` (1080p, 60 fps; los de 50 fps se convierten solos) y la canción (`.mp3`, `.wav` o `.m4a`). Opcional: `logo.png` con tu avatar.
-2. **Pedilo en Claude Code:**
-   ```
-   /cs2-pack
-   ```
-   (o "hacé un edit", o adjuntá los archivos en el chat). No hace falta nada más: Claude crea `projects/<nombre_de_la_canción>/`, copia los clips (los originales no se tocan) y arranca. Sale el paquete completo (edit, shorts, miniatura y textos); para solo el video largo, pedí "solo el edit".
-3. **Respondé lo que no se puede detectar solo.** Claude no puede escuchar la canción, así que puede preguntarte qué arma es en una play dudosa o confirmar algún golpe de voz de la canción. Todo lo demás lo decide solo y te lo cuenta al final.
-4. **Esperá el render.** Claude revisa previews de los momentos clave antes del render completo, renderiza en segundo plano y lee el chequeo final.
-5. **Mirá el resultado** en `output/<nombre>_pack/` (o `output/<nombre>.mp4` si pediste solo el edit).
+<br>
 
-### Corregir
-Pedí los cambios con los minutos del video, como se lo dirías a un editor:
+- Windows 10/11 (los scripts también corren en macOS y Linux), Python 3.11+, `ffmpeg` y `ffprobe` en el PATH.
+- GPU opcional (AMD AMF, NVIDIA NVENC o Intel QSV); sin GPU codifica con la CPU. 16 GB de RAM o más.
+- [Claude Code](https://claude.com/claude-code): la app de escritorio o el CLI `claude`.
+
+```bash
+python -m pip install -r requirements.txt
 ```
-en el 1:23 no se ve la tercera kill, y subí un poco el sonido del juego
+```bash
+python -m pip install demucs
 ```
-Claude ubica cada minuto con `engine/locate.py` (qué clip, qué kill, qué transición, con tiras de cuadros), corrige el plan y vuelve a renderizar solo los pedazos que cambiaron.
+```bash
+python engine/encoders.py
+```
 
-### Después del edit
-- **Short vertical** para TikTok, Reels o Shorts: `hacé un short de este edit` → `output/<nombre>_short.mp4` (1080×1920). Elige solo el tramo con mejor gancho, sin cortar plays.
-- **Paquete para YouTube:** `prepará la subida` → miniaturas 1280×720 en tres estilos (la jugada con la cámara del streamer, la reacción en grande, o un cuadro limpio), títulos, descripción con capítulos válidos y tags en `projects/<nombre>/publish/`. No sube nada.
-- **Estilo de otro edit:** adjuntá un edit **descargado** y pedí `hacé uno así` → mide cortes, sincronía, transiciones, efectos y color, y los aplica a tus clips.
+El último comando muestra qué codificador vas a usar. Probado en un Ryzen 5 7600X con una RX 7900 XT: un edit de 2:30 sale en pocos minutos.
 
-## Skills del proyecto
+</details>
+
+<details>
+<summary><b>Cómo funciona por dentro</b></summary>
+
+<br>
+
+```mermaid
+flowchart LR
+    A[Clips + canción] --> B[Análisis de la canción<br/>y de los clips]
+    B --> C[Plan de cortes<br/>al beat]
+    C --> D[Chequeo de kills<br/>y ritmo]
+    D --> E[Render en paralelo<br/>con GPU]
+    E --> F[Edit + shorts<br/>+ miniatura]
+```
+
+Las reglas de edición del canal viven en `.claude/skills/` y los scripts de `engine/` hacen el trabajo pesado.
 
 | Skill | Para qué |
 |---|---|
-| `cs2-edit` | Arma, corrige y renderiza el edit largo (la usa `cs2-pack`). Reglas de corte, visibilidad, drops, efectos, texto y audio. |
-| `cs2-pack` | **Por defecto.** Todo en uno: edit + shorts + miniatura + textos de YouTube y redes, en una carpeta de entrega. |
-| `clip-catalog` | Guarda cada clip verificado una vez (kills, disparos, arma, mapa, puntaje, dónde se usó) para no volver a revisarlo. |
-| `cs2-short` | Short vertical 9:16 a partir del edit terminado. |
-| `yt-publish` | Miniatura, título, descripción con capítulos, tags y aviso de derechos de la canción. |
-| `edit-style-learner` | Aprende el estilo de un edit de referencia descargado y lo recrea. |
+| `cs2-pack` | Todo en uno, el arranque por defecto |
+| `cs2-edit` | Arma, corrige y renderiza el edit largo |
+| `cs2-short` | Shorts verticales 9:16 |
+| `yt-publish` | Miniatura, título, capítulos y tags |
+| `clip-catalog` | Recuerda los clips ya verificados |
+| `edit-style-learner` | Copia el estilo de un edit descargado (`hacé uno así`) |
 
-## Estructura
-
-```
-engine/                  análisis, plan, render, audio y chequeos
-  analyze_song.py        BPM, onsets, drops, golpes vocales
-  analyze_clips.py       killfeed, hojas de cuadros, disparos exactos
-  catalog.py             catálogo de clips verificados (catalog/clips.json)
-  check_kills.py         visibilidad de cada kill y tiempos muertos
-  build.py               render en paralelo con caché y GPU (+ check_render automático)
-  render.py, audio.py    imagen y mezcla
-  check_render.py        tirones, 60 fps, duración, LUFS
-  locate.py              minuto del video → clip, kill y transición, con tiras de cuadros
-  short.py               shorts verticales 9:16 (uno o varios que no se pisan)
-  pack.py                junta la entrega en output/<nombre>_pack/
-  publish.py             miniatura, capítulos y datos para YouTube
-projects/<nombre>/       un proyecto por video (clips, canción, plan.py, análisis, caché)
-projects/my_jealousy_v3/plan.py   el plan de referencia que se copia en cada edit nuevo
-.claude/skills/          las reglas que sigue Claude
-entrada/                 dejá acá los clips y la canción del próximo edit
-output/                  videos terminados
-```
-
-## Roadmap
-
-- [x] Edit completo desde clips + canción, con render local en GPU y caché de pedazos
-- [x] Chequeos automáticos de visibilidad de kills, ritmo, tirones y volumen
-- [x] Catálogo de clips verificados reutilizable entre edits
-- [x] Short vertical y paquete para YouTube
-- [x] Todo en uno (`/cs2-pack`): edit, shorts, miniatura y textos por plataforma
-- [x] Aprender el estilo de un edit de referencia
-- [ ] Prueba de regresión: comparar previews de un proyecto fijo al cambiar `render.py`
-- [ ] Detección de armas por el ícono del killfeed (hoy se verifica a ojo)
-- [ ] Soporte para clips con la cámara en otras posiciones en el layout `cam` del short
+</details>
 
 ## Notas
 
-- **Música:** la canción es tuya de conseguir. Casi todas las canciones comerciales generan un reclamo de Content ID en YouTube; `yt-publish` te recuerda revisarlo antes de publicar. Nunca se pone la letra en pantalla.
-- **Tus archivos:** los clips de `entrada/` se copian al proyecto; los originales no se modifican ni se borran. `entrada/`, `output/`, `catalog/` y los clips de los proyectos no se suben al repo (`.gitignore`).
-- Las reglas de edición son las del canal WAKO TV (`twitch.tv/el_wako`). Para otro canal, cambiá los datos de §0 de `.claude/skills/cs2-edit/SKILL.md`, el logo y los textos de intro y cierre en `engine/render.py`.
+- **Música:** la canción la ponés vos. Casi todas las comerciales generan un reclamo de Content ID en YouTube. La letra nunca va en pantalla.
+- **Tus archivos:** los clips se copian al proyecto y los originales no se tocan. Los videos y clips no se suben al repo.
+- **Otro canal:** las reglas son las de WAKO TV ([twitch.tv/el_wako](https://twitch.tv/el_wako)). Para usarlo con el tuyo, cambiá §0 de `.claude/skills/cs2-edit/SKILL.md`, el logo y los textos de `engine/render.py`.
