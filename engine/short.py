@@ -55,7 +55,10 @@ def candidates(p, dur):
     segs = p.segments
     starts = [s['o0'] for s in segs if s['kind'] in ('play', 'zoom_out') and s.get('first', True) and s['play'] >= 0]
     starts += [s['o1'] for s in segs if s['kind'] == 'interlude']          # el drop después del negro
-    ends = sorted({s['o1'] for s in segs if s['kind'] in ('play', 'slowmo', 'face_out')})
+    # solo el final de una play completa: el final de una toma interna (corte dentro de la misma play) dejaba
+    # afuera kills de la play (un ACE mostrado con 3 de 5 kills)
+    ends = sorted({s['o1'] for i, s in enumerate(segs) if s['kind'] in ('play', 'slowmo', 'face_out')
+                   and (i == len(segs) - 1 or segs[i + 1]['play'] != s['play'] or segs[i + 1]['kind'] in ('interlude', 'outro'))})
     bounds = [b[0] for b in getattr(p, 'boundaries', [])]
     outro = next((s['o0'] for s in segs if s['kind'] == 'outro'), p.TOTAL)
     inter = [(s['o0'], s['o1']) for s in segs if s['kind'] == 'interlude']
@@ -68,6 +71,8 @@ def candidates(p, dur):
         e = min(ok_end, key=lambda x: abs(x - a - dur))
         if any(ia < e and ib > a + 0.5 for ia, ib in inter): continue         # no meter el negro del interludio en el medio
         a2 = a + 0.2 if any(abs(b - a) < 0.05 for b in bounds) else a          # salir de la transición de entrada
+        if any(abs(ib - a) < 0.01 for ia, ib in inter) and hasattr(p, 'O_DROP2'):
+            a2 = max(a2, p.O_DROP2 - 0.9)                                     # después del negro: arrancar ya revelado, 0.9 s antes de la kill del drop
         e2 = e - 0.15 if any(abs(b - e) < 0.05 for b in bounds) else e
         nk = int(((kills >= a2) & (kills <= e2)).sum()); nc = sum(a2 <= c <= e2 for c in caps)
         first_k = kills[kills >= a2].min() if (kills >= a2).any() else e2

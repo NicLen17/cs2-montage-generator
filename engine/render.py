@@ -473,14 +473,18 @@ def render(n):
             continue
         if ki in ace_idx:
             j = ace_idx[ki]; last = j == len(ace_idx) - 1; g = 1.0 + 0.3 * last
+            # golpe fuerte normalizado por el brillo del centro del cuadro (donde está el enemigo): en mapas claros
+            # (Dust2 al sol) la luz, el destello y el bloom quemaban la imagen y la kill no se veía
+            h_, w_ = f.shape[:2]; cl = float(f[h_ // 4:3 * h_ // 4:6, w_ // 4:3 * w_ // 4:6].mean()) / 255
+            ka = min(1.0, max(0.4, 1.0 - (cl - 0.45) * 3.0))
             tint = np.array(ACE_TINTS[j], np.float32)
-            stk += 0.4 * g * math.exp(-te / 0.16); stint = tint / 255
-            bl += 0.22 * g * e; z += (0.05 + 0.012 * j) * e; split += (8 + 2 * j) * e
+            stk += 0.4 * g * ka * math.exp(-te / 0.16); stint = tint / 255
+            bl += 0.22 * g * ka * e; z += (0.05 + 0.012 * j) * e; split += (8 + 2 * j) * e
             dx += 8 * g * e * shx; dy += 8 * g * e * shy
-            white += att * (0.06 + 0.015 * j) * math.exp(-te / 0.045)
-            lk = (0.15 + 0.7 * ((j * 0.37) % 1), 0.30 * g * math.exp(-te / 0.2), tuple(tint))
+            white += att * (0.06 + 0.015 * j) * ka * math.exp(-te / 0.045)
+            lk = (0.15 + 0.7 * ((j * 0.37) % 1), 0.30 * g * ka * math.exp(-te / 0.2), tuple(tint))
             rings.append((te, 0.5, 0.9 + 0.2 * j, tuple(tint)))
-            if last: rad += 0.05 * math.exp(-te / 0.09); white += att * 0.06 * math.exp(-te / 0.07); rings.append((te - 0.08, 0.6, 1.2, (255, 255, 255)))
+            if last: rad += 0.05 * math.exp(-te / 0.09); white += att * 0.06 * ka * math.exp(-te / 0.07); rings.append((te - 0.08, 0.6, 1.2, (255, 255, 255)))
             continue
         fx = KILL_FX[ki % len(KILL_FX)]
         if fx == 'bloom': bl += 1.0 * e; z += 0.03 * e
