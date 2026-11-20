@@ -16,6 +16,7 @@ CAM = {12: (0, 0, 461, 259), 30: (24, 18, 487, 288)}
 OPEN_CLIP, END_CLIP, ACE_CLIP = 12, 30, 4
 OPEN_END = 17.55                  # la apertura muestra las 3 kills seguidas de c12 en una sola toma
 SLOWMO_SRC = {}
+REVEAL = False                    # True: revelación de la play antes del drop (sin negro con luces)
 ANY = None; DOWN = {0}; BACK = {1, 3}
 VOC = 0.03                        # el ataque vocal detectado está ~30 ms antes del golpe que se oye
 # c1 DEPRECADO (CS:GO): no se usa.
@@ -141,14 +142,21 @@ ACT1_END_SONG = cursor + SONG_A0
 LA = so(grid[I_DROP2 - 8]); RESID['interlude'] = LA - cursor
 segments[-1]['o1'] = LA; segments[-1]['s1'] = segments[-1]['s0'] + (LA - segments[-1]['o0'])
 O_DROP2 = so(TGT[I_DROP2]); REV0 = so(grid[I_DROP2 - 4])
-segments.append(dict(clip=0, s0=0, s1=0, o0=LA, o1=REV0, play=-1, first=True, kind='interlude'))
-INTER = (LA, REV0)
+if REVEAL:      # revelación: sin negro con luces; la mejor play se acerca y se ilumina durante 8 beats hasta el drop
+    INTER = (LA, LA); REV0 = LA
+else:
+    segments.append(dict(clip=0, s0=0, s1=0, o0=LA, o1=REV0, play=-1, first=True, kind='interlude'))
+    INTER = (LA, REV0)
 g = lambda k: so(grid[I_DROP2 - k])
 WORDS_OFF = [(g(7), 'UNA', 0), ((g(7) + g(6)) / 2, 'M4', 0), (g(5), 'CINCO', 1), ((g(5) + g(4)) / 2, 'BAJAS', 1),
          (g(2), 'CERO', 2), ((g(2) + g(1)) / 2, 'DUDAS', 2)]
 VANISH = (g(1) + 0.12, O_DROP2 - 0.12)
 WORDS = []
+n_act2 = len(segments)
 cursor = schedule(ACT2, REV0, 100, first_on=O_DROP2)
+if REVEAL:
+    segments[n_act2]['tin'] = 'black_in'      # el primer acto se funde a negro y de ahí sale la revelación
+    captions[:] = [((O_DROP2 + 0.05) if abs(o - (REV0 + 0.1)) < 1e-6 else o, c) for o, c in captions]   # título en el drop
 last = segments[-1]
 END_LEN = 6.0
 segments.append(dict(clip=END_CLIP, s0=last['s1'], s1=last['s1'] + END_LEN, o0=cursor, o1=cursor + END_LEN, play=last['play'], first=False, kind='face_out'))

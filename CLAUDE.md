@@ -12,7 +12,8 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    `clips_map.txt`, `song.mp3` y opcionalmente `logo.png` (si no, se usa `engine/assets/logo.png`).
    `python engine/catalog.py scan` y `python engine/catalog.py prefill projects/<nombre>` → los clips ya verificados
    en otros edits traen sus kills y no se vuelven a verificar.
-2. `python engine/analyze_song.py projects/<nombre>` → BPM, drops, cortes de batería, golpes vocales.
+2. `python engine/analyze_song.py projects/<nombre>` → BPM, drops, cortes de batería, golpes vocales y **momentos para
+   sincronizar** (`sync.json`): cada sección con buen ritmo lleva una kill exacta (`SYNC` del plan, lo controla `check_kills.py`).
    Separar voz y música (`python -m demucs --two-stems=vocals -n htdemucs -o stems song.mp3`) para el mapa de secciones,
    y los golpes de voz aislados ("stop").
 3. `python engine/analyze_clips.py projects/<nombre>` → lee el killfeed (fuente de verdad: nombre del jugador a la

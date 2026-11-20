@@ -3,7 +3,7 @@
 **Leé este archivo entero antes de escribir o modificar un `plan.py`.** Las reglas de edición (qué mostrar, mínimos, drops) están en `SKILL.md`; acá está cómo se expresan en el plan.
 
 ## Punto de partida
-Copiá **`projects/my_jealousy_v3/plan.py`** (el plan más completo: apertura con varias kills, `kill_at` en drops, golpes secos) y cambiá solo los datos: canción (`SONG_TITLE`, `SONG_A0`, `IDX_DROP`, `I_DROP2`, `MEGA_AT`), `ACT1`/`ACT2`, `CAM`, `OPEN_CLIP`/`END_CLIP`/`ACE_CLIP` y títulos. **Ojo:** ese plan trae dos efectos que fueron pedidos especiales de "My Jealousy" (las ráfagas `B1`/`B2` en las sílabas de "jea-lou-sy" y su `VOC`): no los copies a un plan nuevo salvo que el usuario los pida.
+Copiá **`projects/my_jealousy_v3/plan.py`** (el plan más completo: apertura con varias kills, `kill_at` en drops, golpes secos), poné **`REVEAL = True`** y **`SYNC = [...]`** (ver abajo) y cambiá solo los datos: canción (`SONG_TITLE`, `SONG_A0`, `IDX_DROP`, `I_DROP2`, `MEGA_AT`), `ACT1`/`ACT2`, `CAM`, `OPEN_CLIP`/`END_CLIP`/`ACE_CLIP` y títulos. **Ojo:** ese plan trae dos efectos que fueron pedidos especiales de "My Jealousy" (las ráfagas `B1`/`B2` en las sílabas de "jea-lou-sy" y su `VOC`): no los copies a un plan nuevo salvo que el usuario los pida.
 
 ## Formato de una play
 ```python
@@ -23,7 +23,8 @@ dict(clip, segs=[(kill_idx, src_end, lead, [kills]), ...], cap, tin, flash, hard
 ## Anclas (para revisiones y drops)
 - `kill_at` / `kill_at_seg` fijan una kill a un tiempo exacto de la canción (sincronía que el usuario marcó como intocable, downbeats de drops y estribillos). La toma arranca en el `cursor`, así que el lead es `kill_at − cursor`. Si es mayor que el tiempo del disparo en el clip, `s0` se recorta a 0 y la kill sale fuera del drop; si es muy chico, la kill no tiene contexto. Acomodá las plays de antes hasta que el lead quede entre ~1.2 y 2 s.
 - `start_at` fija dónde empieza una play (transición mega) y absorbe la diferencia en la cola del tramo anterior. Un residuo negativo recorta el tramo anterior y puede comerse la última kill.
-- El interludio queda anclado al beat −8 antes del segundo drop.
+- `SYNC = [tiempos de canción]`: los momentos con buen ritmo elegidos de `analyze_song.py` (confirmados beat por beat). `check_kills.py` exige una kill exacta en cada uno.
+- **Revelación** (`REVEAL = True`, el estándar desde el 20/11/2026): `I_DROP2` es el drop principal. Sin segmento de negro: el primer acto termina en el beat −8 (fundido `black_in`) y la primera play de `ACT2` arranca ahí, achicada y oscura (`reveal()` en `render.py`), con su primera kill en el drop (`first_on`). El título se mueve al drop solo. Dale a esa play `ctx={0: (4.2, 0.9)}`. `REVEAL = False` (lo que trae la plantilla `my_jealousy_v3`) es el negro con luces viejo: no lo uses en edits nuevos.
 
 ## Cuadrar la primera parte
 - `LEAD_PLUS` suma lead a cada play del primer acto. Ajustalo junto con la cantidad de plays hasta que `RESID['interlude']` quede entre 0 y 1 s y el residuo de `start_at` (mega) sea chico y positivo.

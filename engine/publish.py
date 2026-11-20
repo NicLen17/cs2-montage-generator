@@ -310,10 +310,11 @@ def chapters(p):
         ch.append((o - 0.5, f'{cap[0]} en {sub.title()}' if sub.upper() in maps else (f'{cap[0]} con {sub}' if sub else cap[0])))
     inter = next((s for s in segs if s['kind'] == 'interlude'), None)
     if inter: ch.append((inter['o0'], 'Interludio')); ch.append((inter['o1'], 'Segundo drop'))
+    elif getattr(p, 'REVEAL', False) and hasattr(p, 'O_DROP2'): ch.append((p.O_DROP2 - 0.5, 'El drop'))   # revelación
     face = next((s for s in segs if s['kind'] == 'face_out'), None)
     if face: ch.append((face['o0'] - 3, 'Cierre'))
     ch.sort(key=lambda c: c[0]); out = []
-    STRUCT = ('Primera play', 'Interludio', 'Segundo drop', 'Cierre')
+    STRUCT = ('Primera play', 'Interludio', 'Segundo drop', 'El drop', 'Cierre')
     for t, lb in ch:
         t = max(0.0, t)
         if out and t - out[-1][0] < 10:              # YouTube pide 10 s mínimo entre capítulos

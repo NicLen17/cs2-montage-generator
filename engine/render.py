@@ -13,6 +13,7 @@ FD = os.path.join(ENGINE, 'assets', 'fonts') + os.sep
 F800, F600, F300 = FD + 'montserrat-latin-800-normal.woff', FD + 'montserrat-latin-600-normal.woff', FD + 'montserrat-latin-300-normal.woff'
 mode = sys.argv[1]
 N = int(round(TOTAL * FPS))
+REVEAL_MODE = 'far' if globals().get('REVEAL') else 'orbs'   # plan: REVEAL = True -> revelación en vez del negro con luces
 
 # ---------- dispositivo: CPU o GPU, uno u otro de punta a punta ----------
 # WAKO_DEVICE=cpu: numpy + OpenCV en el procesador. WAKO_DEVICE=gpu: todo el cuadro en la placa (engine/gpu.py, OpenGL).
@@ -158,6 +159,18 @@ def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
     M = np.float32([[s, 0, W / 2 - s * cx + dx], [0, s, H / 2 - s * cy + dy]])
     return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
 def zoom(f, z, dx=0, dy=0): return affine(f, z, W / 2, H / 2, dx, dy, clamp=False)
+def shrink(f, z):
+    """El cuadro achicado al centro (z < 1) sobre negro: la play "vista de lejos" de la revelación."""
+    if z >= 0.9999: return f
+    M = np.float32([[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]])
+    return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+def reveal(f, r):
+    """Revelación antes del drop (REVEAL = 'far' en el plan): la play arranca chica, oscura y casi sin color, y se
+    acerca e ilumina hasta llenar la pantalla justo en el drop (r = 1), donde cae su primera kill."""
+    k = ss(r)
+    f = shrink(f, 0.55 + 0.45 * eio(r))
+    mean = chmean(f); f = mean + (f - mean) * (0.35 + 0.65 * k)
+    return f * (0.15 + 0.85 * k ** 1.3)
 def shift(f, dx):
     M = np.float32([[1, 0, dx], [0, 1, 0]])
     return cv2.warpAffine(f, M, (W, H), borderMode=cv2.BORDER_REFLECT)
@@ -422,9 +435,12 @@ def seg_frame(seg, t, slot=0):
         x = eio((t - seg['o0'] - 0.5) / 1.5); s = 1.75 ** x; cx, cy = cam_center(END_CLIP)
         f = affine(f, s, W / 2 + (cx - W / 2) * x, H / 2 + (cy - H / 2) * x)
         f = f * (1 - ss((t - (seg['o1'] - 1.3)) / 1.3))
-    if seg['play'] == 100 and t < O_DROP2:            # ace: black lifts gradually, lights linger
-        r = ss((t - REV0) / (O_DROP2 - REV0 - 0.25))
-        f = f * (0.12 + 0.88 * r) * r ** 0.6 + orbs(t) * (1 - r)
+    if seg['play'] == 100 and t < O_DROP2:
+        if REVEAL_MODE == 'far':                      # la play se acerca y se ilumina hasta el drop
+            f = reveal(f, (t - INTER[0]) / max(1e-6, O_DROP2 - INTER[0]))
+        else:                                         # (viejo) sale del negro con luces
+            r = ss((t - REV0) / (O_DROP2 - REV0 - 0.25))
+            f = f * (0.12 + 0.88 * r) * r ** 0.6 + orbs(t) * (1 - r)
     return f
 
 def seg_index(t):
@@ -551,6 +567,7 @@ if DEVICE == 'gpu':
     _R = globals()
     clip, chmean, zeros, center_mean, to_u8 = GP.clip, GP.chmean, GP.zeros, GP.center_mean, GP.to_u8
     bloom, streak, grade, affine, zoom, shift = GP.bloom, GP.streak, GP.grade, GP.affine, GP.zoom, GP.shift
+    shrink = GP.shrink
     hblur, radial_blur, rgb_split, leak, ring, blit, darken = GP.hblur, GP.radial_blur, GP.rgb_split, GP.leak, GP.ring, GP.blit, GP.darken
     logo_ring = lambda f, t, sweep, pulse: GP.logo_ring(f, t, sweep, pulse, _R)
     paste_avatar = lambda f, sc, al: GP.paste_avatar(f, _R, sc, al)

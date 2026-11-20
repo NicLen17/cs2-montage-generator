@@ -23,3 +23,6 @@ Cada uno ya tiene su regla en `SKILL.md` (sección entre paréntesis). Repasá e
 - Música que se repite o salta; tocar secciones que el usuario ya aprobó (§4, §10).
 - Exportación cortada por un `timeout` (§9).
 - Lectura del killfeed desfasada por un recorte de alto impar (395 → 394 filas): la detección se degradaba a lo largo del clip (§2).
+- Secciones con buen ritmo "sonando solas": el drop de 1:12 de Faster N Harder (el bajo se corta y vuelve en el 2.º tiempo, 78.91 s) cayó en medio de un 4K sin kill; pasó también en My Jealousy, I Don't Like y Castlevania. El mapa de energía por compás no lo veía: ahora `analyze_song.py` busca la vuelta del bombo y `check_kills.py` exige una kill en cada momento de `SYNC` (§1, §4).
+- Interludio a negro con orbes de luz: se sentía seco y la play revelada no caía en un drop real. Reemplazado por la revelación de la play hasta el drop principal (§5).
+- Clip de 50 fps usado sin pasarlo a 60: el motor toma el cuadro por índice a 60 fps y mostraba imágenes 6 s más adelante (el cartel de victoria en vez de la kill). Revisá los fps de cada clip al copiarlos (§2).

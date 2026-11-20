@@ -111,6 +111,9 @@ for i0, L, s, seg in placed:
     g = GAME_GAIN if s['kind'] != 'face_out' else (0.40 if MIX == 1 else 0.55)
     game[i0:i0 + L] += seg * g * cgain.get(s['clip'], 1.0)
 game *= np.clip((OUTRO0 - t) / 1.5, 0, 1)[:, None]
+if globals().get('REVEAL'):                          # revelación antes del drop: el juego entra a la par de la imagen
+    _a, _b = int(INTER[0] * SR), int(O_DROP2 * SR)
+    _x = np.arange(_b - _a) / max(1, _b - _a); game[_a:_b] *= (0.2 + 0.8 * _x * _x * (3 - 2 * _x))[:, None]
 play_mask = np.zeros(n, bool)
 for s in segments:
     if s['kind'] in ('play', 'zoom_out'): play_mask[int(s['o0'] * SR):int(s['o1'] * SR)] = True

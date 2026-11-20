@@ -64,6 +64,9 @@ def candidates(p, dur):
     inter = [(s['o0'], s['o1']) for s in segs if s['kind'] == 'interlude']
     kills = np.array(p.kills); caps = [o for o, _ in p.captions]
     drops = [P['kill_at'] - p.SONG_A0 for P in list(p.ACT1) + list(p.ACT2) if 'kill_at' in P] + [ib for ia, ib in inter]
+    rev = getattr(p, 'REVEAL', False) and hasattr(p, 'O_DROP2')                # revelación: la play arranca chica y oscura
+    if rev: drops.append(p.O_DROP2)
+    drops += [x - p.SONG_A0 for x in getattr(p, 'SYNC', [])]
     out = []
     for a in sorted(set(starts)):
         ok_end = [e for e in ends if dur - 10 <= e - a <= dur + 10 and e <= outro + 0.01]
@@ -71,7 +74,7 @@ def candidates(p, dur):
         e = min(ok_end, key=lambda x: abs(x - a - dur))
         if any(ia < e and ib > a + 0.5 for ia, ib in inter): continue         # no meter el negro del interludio en el medio
         a2 = a + 0.2 if any(abs(b - a) < 0.05 for b in bounds) else a          # salir de la transición de entrada
-        if any(abs(ib - a) < 0.01 for ia, ib in inter) and hasattr(p, 'O_DROP2'):
+        if (any(abs(ib - a) < 0.01 for ia, ib in inter) or (rev and abs(a - p.INTER[0]) < 0.01)) and hasattr(p, 'O_DROP2'):
             a2 = max(a2, p.O_DROP2 - 0.9)                                     # después del negro: arrancar ya revelado, 0.9 s antes de la kill del drop
         e2 = e - 0.15 if any(abs(b - e) < 0.05 for b in bounds) else e
         nk = int(((kills >= a2) & (kills <= e2)).sum()); nc = sum(a2 <= c <= e2 for c in caps)

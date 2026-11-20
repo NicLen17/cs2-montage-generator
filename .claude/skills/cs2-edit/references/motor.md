@@ -41,6 +41,15 @@
 - **Velocidad en CPU:** limitada por la RAM (cuadros float32 de 25 MB, decenas de pasadas por cuadro): con 5 procesos ya
   rinde lo mismo que con 10 o 12 (~30 cuadros/s en total). Cola de pedazos de 2 s + unión sin recodificar: 330 s → 281 s.
 - **Color:** curva en S (`0.42*sigmoide + 0.58*lineal`), sombras frías y luces cálidas, saturación ×1.15, enfoque suave (`1.25*f − 0.25*blur(1.2)`), bloom leve (umbral 205), viñeta suave y un 30 % del cuadro anterior como motion blur leve.
+- **Revelación** (`REVEAL = True`): en los 8 beats antes del drop principal, `reveal(f, r)` con `r` de 0 a 1:
+  `shrink(f, 0.55 + 0.45*eio(r))` (cuadro achicado al centro sobre negro, `warpAffine` lineal con borde constante 0;
+  en GPU, el shader `warp` con `zero=1`), saturación `0.35 + 0.65*ss(r)` y brillo `0.15 + 0.85*ss(r)^1.3`. El audio del
+  juego se multiplica por `0.2 + 0.8*ss(r)` en el mismo tramo (`audio.py`).
+- **Momentos para sincronizar** (`analyze_song.py`, `sync.json`): subidas de energía beat por beat (4 beats después
+  contra 4 antes, mezcla completa o graves/1.5 >= 1.4 dB, máximos locales en +-3 beats), vuelta del bombo después de un
+  corte >= 0.5 s (mapa de 0.25 s; el drop es el beat donde vuelve si ya suena como los 4 siguientes, si no el beat de
+  más subida de los 6 siguientes) y voz que entra o se corta (banda armónica 300-3000 Hz, +-6 dB). La subida puede caer
+  un beat antes o después del golpe: por eso se imprime la tira beat por beat para confirmar.
 - **Transiciones:** `whip_lr`/`whip_rl` (desplazamiento del 55 % del ancho, desenfoque horizontal de hasta 240 px, ±0.13 s), `light` (bloom y luz que cruza de izquierda a derecha, ±0.17 s), `zoom` (desenfoque radial, ±0.13 s), versiones cortas dentro de una play (`whip_short` ±0.075, `light_short` ±0.085), `black_in` (±0.70), `cut`.
 - **Mega:** punch-in a 1.6x con desenfoque radial, separación RGB de 24 px, luz horizontal, destello blanco solo en el centro (±7 %) y B que sale de la luz. Whoosh y golpe grave en el audio.
 - **Efectos de kill** (`KILL_FX` rota): `bloom`, `chroma_zoom`, `shake_blur`, `flash`, `radial_zoom`, `pop`. Decaimiento entre 0.11 y 0.2 s, rampa de entrada de ~3 cuadros, sacudida como oscilación suave (nunca ruido por cuadro).

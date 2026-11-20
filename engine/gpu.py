@@ -106,8 +106,10 @@ void main(){ ivec2 p = P(); ivec2 sz = textureSize(A, 0);
   o = vec4(b + k * r, 0.0); }""",
     # warpAffine (mapa inverso), coordenadas cuantizadas a 1/32 de píxel, borde BORDER_REFLECT
     'warp': """
-uniform sampler2D A; uniform vec3 m0; uniform vec3 m1; uniform int cubic;
-vec3 F(int x, int y, ivec2 sz){ return texelFetch(A, ivec2(r1(x, sz.x), r1(y, sz.y)), 0).rgb; }
+uniform sampler2D A; uniform vec3 m0; uniform vec3 m1; uniform int cubic; uniform int zero;
+vec3 F(int x, int y, ivec2 sz){
+  if (zero == 1 && (x < 0 || y < 0 || x >= sz.x || y >= sz.y)) return vec3(0.0);      // BORDER_CONSTANT 0
+  return texelFetch(A, ivec2(r1(x, sz.x), r1(y, sz.y)), 0).rgb; }
 vec4 cw(float x){ const float A_ = -0.75;
   float c0 = ((A_ * (x + 1.0) - 5.0 * A_) * (x + 1.0) + 8.0 * A_) * (x + 1.0) - 4.0 * A_;
   float c1 = ((A_ + 2.0) * x - (A_ + 3.0)) * x * x + 1.0;
@@ -435,9 +437,10 @@ def resize_lin(f, w, h, base=None, k=1.0):
                   sc=(sw / w, sh / h), hasb=1 if base is not None else 0, k=float(k)), 3)
 
 
-def _warp(f, M, cubic):
+def _warp(f, M, cubic, zero=False):
     iM = cv2.invertAffineTransform(np.asarray(M, np.float64))
-    return G(_run('warp', f.t.size, (('A', f.t),), m0=tuple(iM[0]), m1=tuple(iM[1]), cubic=1 if cubic else 0), 3)
+    return G(_run('warp', f.t.size, (('A', f.t),), m0=tuple(iM[0]), m1=tuple(iM[1]), cubic=1 if cubic else 0,
+                  zero=1 if zero else 0), 3)
 
 
 # ---------------------------------------------------------------- versiones GPU de las funciones de render.py
@@ -504,6 +507,12 @@ def zoom(f, z, dx=0, dy=0):
 
 def shift(f, dx):
     return _warp(f, [[1, 0, dx], [0, 1, 0]], False)
+
+
+def shrink(f, z):
+    if z >= 0.9999:
+        return f
+    return _warp(f, [[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]], False, zero=True)
 
 
 def hblur(f, L):
