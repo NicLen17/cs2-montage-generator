@@ -12,6 +12,7 @@ dict(clip, segs=[(kill_idx, src_end, lead, [kills]), ...], cap, tin, flash, hard
      start_at=song_t, smax={i: max_src_start}, beats=[{0}, {1, 3}, ...])
 ```
 - `segs`: cada tramo es `(kill clave, fin en el clip, lead pedido, kills que muestra)`.
+  **Un corte entre dos tramos de la misma play tiene que saltear más de 1 s del clip** (`s0` del tramo nuevo − `src_end` del anterior); si saltea menos, uní los dos tramos en una sola entrada de `segs` con todas sus kills (SKILL.md §3). Unirlos alarga la play lo que salteaba el corte: compensalo antes de la próxima ancla (colas que sobran, o un beat menos de lead donde el redondeo sumó de más). `keep_cut=[i]` justifica un corte corto que sí hace falta (una sincronía).
 - `cap=('ACE', 'USP-S')`: título y subtítulo. `tin='mega'`: transición de entrada.
 - `flash=[i]`: "flashing light" en esas kills. `hard=[i]`: poco visible. `tech={i: inicio_del_movimiento}`. `ctx={i: (pre_max, post_max)}`: tiempo muerto justificado.
 - `beats=[ANY, BACK, ...]`: en qué tiempos del compás puede caer la kill clave de cada tramo (`DOWN={0}`, `BACK={1,3}` contrabeats).

@@ -10,6 +10,7 @@ Recorre TODAS las kills de kf.json/shots.json de cada clip usado en el plan y mi
 Mínimos (pisos):  normal 0.8/0.6 · primera de la play 1.2/0.6 · poco visible (hard=[i]) 1.2/1.2 ·
                   movimiento técnico (tech={i: inicio}) inicio+0.3 / 0.8 · última de la play 0.8 / 0.7 + media transición.
 Ninguna kill a menos de (media transición + 0.15 s) del centro de un corte. Excepción: el corte seco del bang bang.
+Avisa de CORTES QUE SOBRAN: cortes dentro de una play que saltean 1 s o menos del clip (van unidos).
 Al final cruza kf.json con el killfeed (kf_conf.json de analyze_clips.py): avisa de kills del jugador que el killfeed
 muestra y no están en kf.json (esas no aparecen en la tabla, así que nadie controla que se vean) y de kills de kf.json
 sin entrada en el killfeed.
@@ -34,6 +35,12 @@ def load_plan(project):
 PRE_MAX = {'primera': 1.6, 'normal': 1.3, 'poco visible': 1.8}      # desde el inicio de la toma hasta la 1.ª kill de la toma
 POST_MAX = {'normal': 0.9, 'poco visible': 1.6}                      # después de la última kill de la toma (+ media transición)
 GAP_MAX = 2.0                                                        # entre dos kills de la misma toma continua
+# Cortes que saltean casi nada (pedido del 20/11/2026, ACE de Mirage en paparazzi_v2 1:35): los cortes entre kills
+# salteaban 0.45 y 0.62 s del clip y cada uno llevaba su transición; no ahorraban nada y cortaban la inmersión.
+# Un corte dentro de una misma play tiene que saltear MÁS de MIN_SKIP del clip; si no, los tramos van unidos.
+# Los cortes largos (ACE que saltean varios segundos de viaje, cortes para caer en un beat) no se tocan.
+MIN_SKIP = 1.0
+ROUND_PAD = 0.2                                                      # lo que suele sumar el redondeo al beat en un tramo nuevo
 FRANTIC_K = 0.75                                                     # en tramos frenéticos (FRANTIC del plan) todo se achica
 
 
@@ -77,6 +84,11 @@ def dead_time(p, segs, plays, bound_at, chain):
         # huecos entre kills de la misma toma
         for (o1, j1), (o2, j2) in zip(ks, ks[1:]):
             lim = ctx.get(j2, (GAP_MAX, 0))[0] if j2 in ctx else GAP_MAX * k_(o2)
+            # partir la toma solo sirve si el corte saltearía más de MIN_SKIP después de dejar los mínimos de las dos kills
+            post_n = 1.2 if j1 in hard else 0.6
+            pre_n = 1.2 if j2 in hard else 0.8
+            if j2 in tech: pre_n = max(pre_n, p.SHOTS[c][j2] - tech[j2] + 0.3)
+            if o2 - o1 - post_n - pre_n - ROUND_PAD <= MIN_SKIP: continue
             if o2 - o1 > lim + 1e-3:
                 out.append(f'c{c} kills {j1}→{j2} (video {o1:.2f}→{o2:.2f}s): {o2 - o1:.2f}s sin kills en la misma toma → cortá el medio si no aporta')
         # después de la última kill de la toma
@@ -94,6 +106,25 @@ def dead_time(p, segs, plays, bound_at, chain):
                 lim = max(lim, e['t0'] - p.SHOTS[c][j] + min(0.9, e['t1'] - e['t0']) + HALF.get(typ, 0.0))
         if t1 - o > lim + 1e-3:
             out.append(f'c{c} video {o:.2f}s: {t1 - o:.2f}s después de la última kill de la toma (máx {lim:.2f}) → cortá antes, que no quede mirando la nada')
+    return out
+
+
+def needless_cuts(p, plays):
+    """Cortes dentro de una misma play que saltean MIN_SKIP o menos del clip: no ahorran tiempo y cortan la play con
+    una transición. Esos tramos van unidos en uno continuo. Un corte así que sí hace falta (por ejemplo para que una
+    kill caiga en un momento de SYNC) se justifica con keep_cut=[i] en la play (i = tramo que arranca después del corte)."""
+    out = []; prev = None; si = 0
+    for g in p.segments:
+        if g['kind'] not in ('play', 'zoom_out'): prev = None; continue
+        same = prev is not None and prev['clip'] == g['clip'] and prev['play'] == g['play'] and g['kind'] == 'play'
+        si = si + 1 if same else 0
+        if same and not g.get('burst') and not g.get('bang') and abs(prev['s1'] - g['s0']) > 0.03:
+            c = g['clip']; P = plays.get(c, {})
+            skip = g['s0'] - prev['s1']
+            if skip <= MIN_SKIP + 1e-3 and si not in P.get('keep_cut', []):
+                out.append(f'c{c} corte en video {g["o0"]:.2f}s (tramo {si}): saltea solo {skip:.2f}s del clip '
+                           f'→ uní los tramos en uno continuo (o justificalo con keep_cut=[{si}])')
+        prev = g
     return out
 
 
@@ -229,6 +260,12 @@ def main():
         for x in dead: print('  -', x)
     else:
         print('Sin tiempos muertos: cada toma arranca cerca de la acción y corta después de la última kill.')
+    cuts = needless_cuts(p, plays)
+    if cuts:
+        print(f'\n{len(cuts)} CORTE(S) QUE SOBRAN dentro de una play (saltean {MIN_SKIP:.1f}s o menos del clip: van en un tramo continuo):')
+        for x in cuts: print('  -', x)
+    else:
+        print('Sin cortes que sobren: ningún corte dentro de una play saltea 1 s o menos.')
     # reacciones (engine/reactions.py): la del cierre de cada play se oye solo si el tramo la incluye
     kfp = os.path.join(project, 'kf.json')
     KF = {int(k): sorted(v) for k, v in json.load(open(kfp)).items()} if os.path.exists(kfp) else {}
