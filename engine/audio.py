@@ -2,13 +2,56 @@ import os, sys
 PROJECT = os.path.abspath(sys.argv[1]); ENGINE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT); os.chdir(PROJECT)
 sys.argv = [sys.argv[0]] + sys.argv[2:]
-import numpy as np, subprocess
+import numpy as np, subprocess, json
 from scipy.signal import butter, sosfiltfilt
+from scipy.ndimage import maximum_filter1d, uniform_filter1d
 from plan import *
 SR = 48000
+# Mezcla 2 (20/11/2026, pedido del usuario: "los tiros y headshots siguen muy bajos, la música predomina demasiado").
+# AUDIO_MIX = 1 en el plan vuelve a la mezcla vieja. Los valores se pueden subir desde el plan; no se bajan sin pedido.
+MIX = int(os.environ.get('WAKO_AUDIO_MIX', globals().get('AUDIO_MIX', 2)))
+GAME_GAIN = globals().get('GAME_GAIN', 0.78 if MIX == 1 else 1.0)       # juego en las plays (en el cierre: 0.40 / 0.55)
+GAME_EMPH = globals().get('GAME_EMPH', 1.7 if MIX == 1 else 2.35)        # realce de cada tiro y headshot
+MUSIC_DUCK = globals().get('MUSIC_DUCK', 0.42 if MIX == 1 else 0.52)    # cuánto se aparta la música en cada tiro
+MUSIC_BED = globals().get('MUSIC_BED', 0.92 if MIX == 1 else 0.85)      # música debajo del gameplay (0.92 en logo, interludio, outro)
+GAME_PRESENCE = globals().get('GAME_PRESENCE', 0.25)                    # realce de 2-6 kHz en todo el juego (estallido, headshot)
+MUSIC_CARVE = globals().get('MUSIC_CARVE', 0.35)                        # cuánto libera la música la banda 1.2-6 kHz en cada tiro
+REACT_GAIN = globals().get('REACT_GAIN', 1.3)                           # voz extra en las reacciones (se suma a la que ya trae el clip)
+REACT_DUCK = globals().get('REACT_DUCK', 0.45)                          # cuánto baja la música mientras dura la reacción
+REACT_HOLD = globals().get('REACT_HOLD', 0.6)                           # la música sigue baja este tiempo después del grito
+REACT_RELEASE = globals().get('REACT_RELEASE', 0.5)                     # y vuelve a su nivel en este tiempo (curva suave)
+REACT_KINDS = globals().get('REACT_KINDS', ('grupal',))                 # solo reacciones grupales (pedido del 20/11/2026)
+OUT_WAV = os.environ.get('WAKO_AUDIO_OUT', 'work_audio.wav')
+
+
+_DEC = {}
+def decode_all(paths):
+    """Decodifica varios archivos con UNA sola llamada a ffmpeg y los guarda enteros en memoria. Abrir ffmpeg cuesta
+    ~0.5 s en Windows y antes se abría una vez por tramo (~50 veces, 27 de los 38 s que tardaba la mezcla)."""
+    import tempfile, shutil
+    paths = [p for p in dict.fromkeys(paths) if p not in _DEC and os.path.exists(p)]
+    if not paths: return
+    tmp = tempfile.mkdtemp(prefix='wako_audio_')
+    try:
+        cmd = ['ffmpeg', '-v', 'error', '-y']
+        for p in paths: cmd += ['-i', p]
+        for i, p in enumerate(paths):
+            cmd += ['-map', f'{i}:a:0', '-f', 'f32le', '-ac', '2', '-ar', str(SR), os.path.join(tmp, f'{i}.raw')]
+        if subprocess.run(cmd, capture_output=True).returncode != 0 and len(paths) > 1:
+            for p in paths: decode_all([p])          # algún archivo sin audio: de a uno
+            return
+        for i, p in enumerate(paths):
+            f = os.path.join(tmp, f'{i}.raw')
+            _DEC[p] = np.fromfile(f, np.float32).reshape(-1, 2) if os.path.exists(f) else np.zeros((0, 2), np.float32)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 def dec(path, ss, t):
-    cmd = ['ffmpeg', '-v', 'error', '-ss', f'{max(ss,0):.5f}', '-i', path, '-t', f'{t:.5f}', '-f', 'f32le', '-ac', '2', '-ar', str(SR), '-']
-    return np.frombuffer(subprocess.run(cmd, capture_output=True).stdout, np.float32).reshape(-1, 2).astype(np.float64)
+    if path not in _DEC: decode_all([path])
+    a = _DEC.get(path, np.zeros((0, 2), np.float32)); i0 = int(round(max(ss, 0) * SR))
+    return a[i0:i0 + int(round(t * SR))].astype(np.float64)
+decode_all(['song.mp3'] + [f"clips/c{s['clip']}.mp4" for s in segments if s.get('clip')])
+
+
 n = int(TOTAL * SR); t = np.arange(n) / SR
 song = np.zeros((n, 2))
 XF = int(0.025 * SR)
@@ -28,7 +71,10 @@ ext = {}
 for ob, typ, bi in boundaries:
     w = TWa.get(typ, 0.012); ext[bi] = w            # segment bi starts early by w
     ext[(bi - 1, 'end')] = w
+
+# ---------- juego ----------
 game = np.zeros((n, 2))
+placed = []                                          # (i0, L, segmento, audio) de cada tramo con sonido del juego
 for i, s in enumerate(segments):
     if s['kind'] in ('logo', 'interlude', 'outro'): continue
     if s['kind'] == 'slowmo':
@@ -37,8 +83,8 @@ for i, s in enumerate(segments):
         raw = dec(f"clips/c{s['clip']}.mp4", s['s0'], 1.0); p = np.clip((src - s['s0']) * SR, 0, len(raw) - 2); ii = p.astype(int); fr = (p - ii)[:, None]
         seg = raw[ii] * (1 - fr) + raw[ii + 1] * fr
         seg = sosfiltfilt(butter(2, 1200, 'low', fs=SR, output='sos'), seg, axis=0) * np.linspace(1, 0.2, len(seg))[:, None]
-        i0 = int(round(s['o0'] * SR)); game[i0:i0 + len(seg)] += seg * 0.4; continue
-    a = ext.get(i, 0.012); b = ext.get((i - 1 + 1, 'end'), 0.012) if False else ext.get((i, 'end'), 0.012)
+        i0 = int(round(s['o0'] * SR)); game[i0:i0 + len(seg)] += seg * (0.4 if MIX == 1 else 0.5); continue
+    a = ext.get(i, 0.012); b = ext.get((i, 'end'), 0.012)
     o0 = s['o0'] - a; o1 = s['o1'] + b
     src0 = s['s0'] - a
     seg = dec(f"clips/c{s['clip']}.mp4", src0, o1 - o0)
@@ -47,10 +93,39 @@ for i, s in enumerate(segments):
     seg = seg[:L].copy()
     fa, fb = int(2 * a * SR), int(2 * b * SR)
     seg[:fa] *= np.linspace(0, 1, fa)[:, None]; seg[-fb:] *= np.linspace(1, 0, fb)[:, None]
-    g = 0.78 if s['kind'] != 'face_out' else 0.40
-    game[i0:i0 + L] += seg * g
-game *= np.clip((OUTRO0 - t) / 1.5, 0, 1)[:, None]
+    placed.append((i0, L, s, seg))
 
+# Mezcla 2: cada clip al mismo nivel (vienen grabados a volúmenes distintos y los más bajos quedaban tapados por la música)
+cgain = {}
+if MIX >= 2:
+    hp = butter(2, 120, 'high', fs=SR, output='sos'); w = int(0.4 * SR)
+    lv = {}
+    for i0, L, s, seg in placed:
+        x = sosfiltfilt(hp, seg.mean(axis=1))
+        if len(x) < w: continue
+        lv.setdefault(s['clip'], []).append(np.sqrt(uniform_filter1d(x ** 2, w)[w // 2::w // 2] + 1e-12))
+    lvdb = {c: 20 * np.log10(np.percentile(np.concatenate(r), 90)) for c, r in lv.items()}
+    ref = np.median(list(lvdb.values())) if lvdb else 0
+    cgain = {c: float(np.clip(10 ** ((ref - d) / 20), 0.6, 1.8)) for c, d in lvdb.items()}
+for i0, L, s, seg in placed:
+    g = GAME_GAIN if s['kind'] != 'face_out' else (0.40 if MIX == 1 else 0.55)
+    game[i0:i0 + L] += seg * g * cgain.get(s['clip'], 1.0)
+game *= np.clip((OUTRO0 - t) / 1.5, 0, 1)[:, None]
+play_mask = np.zeros(n, bool)
+for s in segments:
+    if s['kind'] in ('play', 'zoom_out'): play_mask[int(s['o0'] * SR):int(s['o1'] * SR)] = True
+def _db(x): return 20 * np.log10(np.sqrt(np.mean(x ** 2)) + 1e-9)
+if MIX >= 2 and play_mask.any():
+    # las canciones vienen masterizadas muy fuerte y el audio de Twitch no: con una ganancia fija el juego quedaba
+    # 15 dB debajo de la música. Se nivela contra la música de este video: el juego queda GAME_VS_MUSIC dB debajo
+    # (antes del realce de los tiros, que lo pasa por encima en cada disparo).
+    GAME_VS_MUSIC = float(os.environ.get('WAKO_GAME_VS_MUSIC', globals().get('GAME_VS_MUSIC', -11.5)))
+    cur = _db(game.mean(axis=1)[play_mask]) - _db(song.mean(axis=1)[play_mask] * MUSIC_BED)
+    game_lift = float(np.clip(10 ** ((GAME_VS_MUSIC - cur) / 20), 1.0, 6.0))
+    game *= game_lift
+    cgain = {c: g * game_lift for c, g in cgain.items()} or {c: game_lift for c in {s['clip'] for s in segments}}
+
+# ---------- efectos de transición ----------
 rng = np.random.default_rng(2)
 fx = np.zeros((n, 2))
 def band_sweep(dur, f_lo, f_hi, peak):
@@ -85,8 +160,8 @@ for ob, typ, bi in boundaries:
 for o in (segments[1]['o0'], segments[-2]['o0'] + 0.5):
     w = band_sweep(0.9, 300, 5000, 0.45); i = int((o - 0.1) * SR); fx[i:i + len(w)] += (w * 0.15)[:, None]
 fx = fx[:n]
-# transient emphasis: make shots / headshot dinks pop, duck music a touch under them
-from scipy.ndimage import maximum_filter1d, uniform_filter1d
+
+# ---------- realce de transitorios: los tiros y el "dink" del headshot saltan y la música se aparta ----------
 mono = game.mean(axis=1)
 hf = sosfiltfilt(butter(2, [1200, 9000], 'band', fs=SR, output='sos'), mono)
 ef = np.sqrt(np.maximum(uniform_filter1d(hf ** 2, int(0.003 * SR)), 0)); es = np.sqrt(np.maximum(uniform_filter1d(hf ** 2, int(0.08 * SR)), 0)) + 1e-4
@@ -94,11 +169,113 @@ tr = np.clip(ef / es - 1.2, 0, 3) / 3
 tr = maximum_filter1d(tr, int(0.01 * SR)); tr = uniform_filter1d(tr, int(0.05 * SR))
 lvl = np.clip(ef / (np.percentile(ef[ef > 0], 99) + 1e-9), 0, 1)
 tr *= np.clip(lvl * 3, 0, 1)
-game = game * (1 + 1.7 * tr)[:, None]
-duck = 1 - 0.42 * np.clip(uniform_filter1d(tr, int(0.12 * SR)) * 2.5, 0, 1)
-mix = song * 0.92 * duck[:, None] + game + fx
+bed = np.full(n, 0.92)
+if MIX == 1:
+    game = game * (1 + GAME_EMPH * tr)[:, None]
+    duck = 1 - MUSIC_DUCK * np.clip(uniform_filter1d(tr, int(0.12 * SR)) * 2.5, 0, 1)
+else:
+    # presencia: la banda del estallido y del headshot (2-6 kHz) un poco más arriba en todo el juego
+    game = game + GAME_PRESENCE * sosfiltfilt(butter(2, [2000, 6000], 'band', fs=SR, output='sos'), game, axis=0)
+    game = game * (1 + GAME_EMPH * tr)[:, None]
+    hold = maximum_filter1d(tr, int(0.06 * SR))                   # la música se aparta enseguida y vuelve en ~100 ms
+    duck = 1 - MUSIC_DUCK * np.clip(uniform_filter1d(hold, int(0.10 * SR)) * 2.5, 0, 1)
+    # en cada tiro la música además libera la banda donde vive el disparo (ecualizador dinámico)
+    mid = sosfiltfilt(butter(2, [1200, 6000], 'band', fs=SR, output='sos'), song, axis=0)
+    song = song - mid * (MUSIC_CARVE * np.clip(uniform_filter1d(hold, int(0.08 * SR)) * 2.5, 0, 1))[:, None]
+    # y queda más baja debajo de todo el gameplay que en el logo, el interludio y el outro
+    for s in segments:
+        if s['kind'] in ('logo', 'interlude', 'outro'): continue
+        bed[int(s['o0'] * SR):int(s['o1'] * SR)] = MUSIC_BED
+    bed = uniform_filter1d(bed, int(0.35 * SR))
+
+# ---------- reacciones (gritos, festejos) al cierre de una play: la voz sube por encima de la música solo ahí ----------
+react = np.zeros((n, 2)); rduck = np.ones(n); rlog = []
+USE_RX = globals().get('REACTIONS', True)
+if USE_RX is not False and os.path.exists('reactions.json'):
+    RX = {int(k): v for k, v in json.load(open('reactions.json')).items()}
+    KF = {int(k): v for k, v in json.load(open('kf.json')).items()}
+    for c, evs in RX.items():
+        if isinstance(USE_RX, dict) and USE_RX.get(c, True) is False: continue
+        segs_c = [s for s in segments if s['clip'] == c and s['kind'] in ('play', 'face_out', 'zoom_out')]
+        vpath = f'clip_stems/c{c}/vocals.wav'
+        if not segs_c or not evs or not os.path.exists(vpath): continue
+        shown = [k for k in KF.get(c, []) if any(s['s0'] - 0.3 <= k <= s['s1'] + 0.3 for s in segs_c)]
+        if not shown: continue
+        last = max(shown)                                         # la kill que cierra la play que se ve
+        for e in evs:
+            if abs(e['kill'] - last) > 0.05: continue             # nunca en medio de una play
+            if e.get('kind') not in REACT_KINDS: continue         # gritos individuales: no se resaltan
+            done = False
+            for s in segs_c:
+                # la reacción vive dentro de su tramo: termina (con fundido) en el corte, nunca suena sobre otro clip
+                a0 = max(e['t0'] - 0.06, s['s0']); a1 = min(e['t1'], s['s1'])
+                if a1 - a0 < 0.12: continue
+                o = s['o0'] + (a0 - s['s0']); i0 = int(round(o * SR))
+                v = dec(vpath, a0, a1 - a0)[: n - i0]
+                m = len(v); fi = min(int(0.05 * SR), m // 3); fo_ = min(int(0.22 * SR), m // 2)
+                env = np.ones(m); env[:fi] = np.linspace(0, 1, fi); env[m - fo_:] = np.linspace(1, 0, fo_)
+                gk = (0.55 if s['kind'] == 'face_out' else GAME_GAIN) * cgain.get(c, 1.0)
+                react[i0:i0 + m] += v * (env * REACT_GAIN * gk)[:, None]
+                # la música no vuelve de golpe: sigue baja REACT_HOLD s después del grito (sin pasar el corte del clip)
+                # y recién ahí sube en REACT_RELEASE s (el usuario la sentía volver muy rápido)
+                o_end = o + m / SR; hold_end = max(o_end, min(o_end + REACT_HOLD, s['o1']))
+                k0 = i0; k1 = int(hold_end * SR); k2 = min(n, k1 + int(REACT_RELEASE * SR))
+                dk = np.zeros(k2 - k0)
+                dk[:fi] = np.linspace(0, 1, fi); dk[fi:k1 - k0] = 1
+                dk[k1 - k0:] = 0.5 * (1 + np.cos(np.linspace(0, np.pi, k2 - k1)))
+                rduck[k0:k2] = np.minimum(rduck[k0:k2], 1 - REACT_DUCK * dk)
+                rlog.append(f"c{c} {e['kind']} (+{e['db']} dB sobre la charla): clip {a0:.2f}-{a1:.2f}s -> video {o:.2f}-{o + a1 - a0:.2f}s")
+                done = True
+            if not done:
+                end = max(s['s1'] for s in segs_c)
+                rlog.append(f"c{c} {e['kind']} en {e['t0']:.2f}s del clip queda AFUERA (el tramo termina en {end:.2f}s): "
+                            f"si la play lo merece, alargá el fin del tramo (check_kills.py sugiere cuánto)")
+    rduck = 1 - uniform_filter1d(1 - rduck, int(0.08 * SR))
+
+songm = song * (bed * duck * rduck)[:, None]
+mix = songm + game + react + fx
 mix = np.tanh(mix * 1.05) / np.tanh(1.05)
-mix *= 0.89 / np.abs(mix).max()
-subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', 'work_audio.wav'],
+if MIX == 1:
+    mix *= 0.89 / np.abs(mix).max()
+else:
+    # los tiros más fuertes dejan picos entre muestras: se normaliza al pico real (sobremuestreado 4x) en -1.5 dBTP
+    from scipy.signal import resample_poly
+    tp = max(np.abs(resample_poly(mix[:, ch], 4, 1)).max() for ch in (0, 1))
+    mix *= 10 ** (-1.5 / 20) / tp
+    # el AAC del video final agrega ~1.5 dB de pico en los tiros: se codifica una prueba, se mide y se corrige
+    import tempfile, re
+    for _ in range(2):
+        tmp = os.path.join(tempfile.gettempdir(), f'wako_tp_{os.getpid()}.m4a')
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', '-c:a', 'aac', '-b:a', '320k', tmp],
+                       input=(mix * 32767).astype(np.int16).tobytes())
+        r = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-i', tmp, '-af', 'ebur128=peak=true', '-f', 'null', '-'],
+                           capture_output=True, text=True, errors='replace').stderr
+        os.remove(tmp)
+        pk = re.findall(r'Peak:\s+(-?[\d.]+|-inf)', r)
+        if not pk or float(pk[-1]) <= -1.3: break
+        mix *= 10 ** ((-1.4 - float(pk[-1])) / 20)
+subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', OUT_WAV],
                input=(mix * 32767).astype(np.int16).tobytes())
+
+
+# ---------- balance juego / música (queda en audio_balance.txt para comparar entre edits) ----------
+gm, sm = (game + react).mean(axis=1), songm.mean(axis=1)
+lines = [f'mezcla {MIX}: juego {GAME_GAIN} · realce {GAME_EMPH} · música {MUSIC_BED if MIX >= 2 else 0.92} (se aparta {MUSIC_DUCK} en cada tiro)'
+         + (f' · juego nivelado ×{game_lift:.2f}' if MIX >= 2 else ''),
+         f'juego vs música en las plays: {_db(gm[play_mask]) - _db(sm[play_mask]):+.1f} dB']
+sh = []
+for k in globals().get('kills', []):
+    i = int(k * SR); w0, w1 = i - int(0.03 * SR), i + int(0.15 * SR)
+    if w0 - int(0.25 * SR) < 0 or w1 > n: continue
+    pk = np.sqrt(np.max(uniform_filter1d(gm[w0:w1] ** 2, int(0.01 * SR))))
+    mus = np.sqrt(np.max(uniform_filter1d(sm[w0:w1] ** 2, int(0.01 * SR)))) + 1e-9
+    sh.append(20 * np.log10(pk / mus + 1e-9))
+if sh:
+    sh = np.array(sh)
+    lines.append(f'tiro de cada kill sobre la música: mediana {np.median(sh):+.1f} dB, el más bajo {sh.min():+.1f} dB ({len(sh)} kills)')
+lines += [f'reacciones resaltadas: {sum("->" in r for r in rlog)}'] + ['  ' + r for r in rlog]
+open(os.environ.get('WAKO_AUDIO_LOG', 'audio_balance.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+try: sys.stdout.reconfigure(encoding='utf-8')
+except Exception: pass
+print('\n'.join(lines))
 print('ok', TOTAL)

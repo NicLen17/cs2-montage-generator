@@ -76,7 +76,7 @@ Claude solo te pregunta lo que no puede detectar (un arma dudosa, algún golpe d
 <br>
 
 - Windows 10/11 (los scripts también corren en macOS y Linux), Python 3.11+, `ffmpeg` y `ffprobe` en el PATH.
-- GPU opcional (AMD AMF, NVIDIA NVENC o Intel QSV); sin GPU codifica con la CPU. 16 GB de RAM o más.
+- GPU opcional: con OpenGL 4.3 (cualquier AMD, NVIDIA o Intel de los últimos años) todo el render corre en la placa; para codificar usa AMD AMF, NVIDIA NVENC o Intel QSV. Sin GPU, todo en la CPU (más lento, mismo resultado). 16 GB de RAM o más.
 - [Claude Code](https://claude.com/claude-code): la app de escritorio o el CLI `claude`.
 
 ```bash
@@ -88,8 +88,11 @@ python -m pip install demucs
 ```bash
 python engine/encoders.py
 ```
+```bash
+python engine/setup_rife.py
+```
 
-El último comando muestra qué codificador vas a usar. Probado en un Ryzen 5 7600X con una RX 7900 XT: un edit de 2:30 sale en pocos minutos.
+`encoders.py` muestra qué codificador vas a usar. `setup_rife.py` (opcional, baja ~410 MB una vez) instala RIFE para las cámaras lentas en la GPU. Con GPU todo el render corre en la placa (`--device gpu`, por defecto si la hay): en un Ryzen 5 7600X con una RX 7900 XT un edit de 2:30 sale en ~1 minuto.
 
 </details>
 

@@ -16,7 +16,9 @@ Cada uno ya tiene su regla en `SKILL.md` (sección entre paréntesis). Repasá e
 - Tomas que arrancan 1.6-2.2 s antes de la primera kill o huecos de 2.5-3 s entre kills dentro de un ACE: el redondeo al beat suma lead sin que se note en el plan (§3).
 - Texto que tapa la play: frases, letras, títulos grandes en el centro (§7).
 - Fundido a negro brusco y segundos muertos en negro antes del drop (§5).
-- Sonido del juego bajo: tres pedidos seguidos para subirlo (§8).
+- Sonido del juego bajo: cuatro pedidos. Con ganancia fija el juego quedaba 15 dB debajo de la música (la canción viene masterizada fuerte): ahora se nivela contra la música de cada video. Casi a la par (−3.4 dB) fue demasiado: el aprobado es el punto medio (−9.5 dB). Leé `audio_balance.txt` (§8).
+- Festejos del final de la play cortados por una cola demasiado corta: la reacción llega 0.7-1.5 s después de la kill (§8).
+- Gritos individuales resaltados (solo van los grupales) y un grito que siguió sonando sobre el clip siguiente: la reacción termina en el corte de su tramo (§8).
 - Desfases de milisegundos entre kill y golpe por usar el beat estimado en vez del onset real (§4).
 - Música que se repite o salta; tocar secciones que el usuario ya aprobó (§4, §10).
 - Exportación cortada por un `timeout` (§9).

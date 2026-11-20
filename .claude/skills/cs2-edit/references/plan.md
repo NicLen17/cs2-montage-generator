@@ -36,6 +36,8 @@ dict(clip, segs=[(kill_idx, src_end, lead, [kills]), ...], cap, tin, flash, hard
 - `CAM = {clip: (x0, y0, x1, y1)}` solo para `OPEN_CLIP` y `END_CLIP`, medida en cada clip. `ACE_CLIP` es uno solo (el que recibe los golpes fuertes de ACE): elegí el del segundo drop.
 - `FRANTIC = [(song_a, song_b), ...]`: tramos frenéticos (los techos de tiempo muerto se multiplican por 0.75).
 - `PHRASES` y `WORDS` quedan vacíos (el usuario dio de baja las frases).
+- **Reacciones (solo grupales):** para que se oiga el festejo del final de una play, poné como `src_end` del último tramo el "fin de tramo" que sugiere `check_kills.py` (o `reactions.py`). No hace falta `ctx`: la cola queda justificada sola. Alargar ese tramo corre todo lo que viene después: compensalo con los leads de las plays siguientes (o `LEAD_PLUS`) para no mover las anclas. `REACTIONS = False` (todas) o `REACTIONS = {clip: False}` las apaga. Nunca se alarga solo el audio: la voz termina en el corte de su tramo.
+- **Audio (solo si el usuario pide otro balance):** `GAME_VS_MUSIC` (−11.5 dB; de a 2 dB), `GAME_EMPH` (2.35), `GAME_PRESENCE` (0.25), `MUSIC_DUCK` (0.52), `MUSIC_CARVE` (0.35), `MUSIC_BED` (0.85), `REACT_GAIN` (1.3), `REACT_DUCK` (0.45), `REACT_HOLD` (0.6 s), `REACT_RELEASE` (0.5 s), `REACT_KINDS` (`('grupal',)`), `AUDIO_MIX = 1` (mezcla vieja). Ver SKILL.md §8.
 
 ## Pedidos especiales (solo si el usuario los pide para ese video)
 No son parte del estilo: fueron efectos atados a una canción puntual. El motor los sigue soportando:

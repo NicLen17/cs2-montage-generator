@@ -26,14 +26,25 @@ def _works(name):
 
 
 def pick():
+    """build.py lo detecta una vez y lo deja en WAKO_ENCODER: los procesos de render lo heredan y no vuelven a probar
+    los codificadores (eran 2-3 s por proceso)."""
     forced = os.environ.get('WAKO_ENCODER')
     if forced:
         return forced
     return available()[0]
 
 
-def video_encoder_args(stage='intermediate', bitrate_mbps=None):
-    """stage='intermediate': casi sin pérdida para los pedazos. stage='final': tamaño razonable para subir."""
+def video_encoder_args(stage='intermediate', bitrate_mbps=None, src_nv12=False):
+    """src_nv12: la entrada ya viene en NV12 (modo GPU): los codificadores de placa la toman directo, sin conversión."""
+    a = _video_encoder_args(stage, bitrate_mbps)
+    if src_nv12 and pick() in ('amf', 'nvenc'):
+        a = ['nv12' if x == 'yuv420p' else x for x in a]
+    return a
+
+
+def _video_encoder_args(stage='intermediate', bitrate_mbps=None):
+    """stage='intermediate': casi sin pérdida (cámaras lentas). stage='final': tamaño razonable para subir.
+    Los pedazos del render se codifican directo con 'final' y se unen sin recodificar (todos con los mismos ajustes)."""
     enc = pick()
     if stage == 'final' and bitrate_mbps is None:
         bitrate_mbps = 30

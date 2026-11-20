@@ -16,12 +16,14 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    Separar voz y música (`python -m demucs --two-stems=vocals -n htdemucs -o stems song.mp3`) para el mapa de secciones,
    y los golpes de voz aislados ("stop").
 3. `python engine/analyze_clips.py projects/<nombre>` → mirar `sheets/*.jpg`, corregir `kf.json` (kills propias reales,
-   verificadas a ojo), después `python engine/analyze_clips.py projects/<nombre> --shots` y
-   `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo).
+   verificadas a ojo), después `python engine/analyze_clips.py projects/<nombre> --shots`,
+   `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo) y
+   `python engine/reactions.py projects/<nombre> --all` (festejos grupales al final de cada play, con Demucs; ver skill §8).
 4. Escribir `projects/<nombre>/plan.py` copiando `projects/my_jealousy_v3/plan.py` y cambiando solo los datos
    (leer antes `.claude/skills/cs2-edit/references/plan.md`). Correr `python projects/<nombre>/plan.py` y revisar residuos y avisos.
 5. `python engine/check_kills.py projects/<nombre>` → sin problemas y sin avisos de TIEMPO MUERTO sin justificar.
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
+   Si el usuario quiere ver el video entero antes del final: `--draft` (borrador 960x540 a 30 fps en `projects/<nombre>/borrador.mp4`).
 7. Render final (en segundo plano): `python engine/build.py projects/<nombre>` → `output/<nombre>.mp4`.
    Al terminar corre solo `check_render.py` y lo guarda en `projects/<nombre>/check_render.txt`: leelo.
 8. Paquete completo (skill `cs2-pack`): `python engine/short.py projects/<nombre> --count auto --dur 35`, miniatura y textos
@@ -63,17 +65,29 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 ## Comandos largos
 - La herramienta de terminal corta a los 10 minutos. Corré `engine/build.py` (render final), `engine/short.py`
   y cámaras lentas **en segundo plano** (`run_in_background`) y esperá el aviso; nunca con un timeout que corte el video.
-- Después verificá: `check_render.txt` (duración vs `TOTAL` del plan, 60 fps, tirones, volumen) y una hoja de fotogramas.
+- Después verificá: `check_render.txt` (duración vs `TOTAL` del plan, 60 fps, tirones, volumen), `audio_balance.txt`
+  (juego vs música y reacciones resaltadas) y una hoja de fotogramas.
 
 ## Hardware y velocidad
-- `engine/build.py` divide el video en pedazos de 6 s y los renderiza en paralelo (núcleos lógicos − 2 procesos).
-- Codifica con la GPU si está disponible (AMD AMF en la RX 7900 XT); si no, con la CPU. Ver: `python engine/encoders.py`.
-- **GPU en el render (OpenCL):** los cuadros "planos" (play sin transición, sin efecto de kill, sin texto ni fundido; más de
-  la mitad del video) se procesan enteros en la Radeon (color, nitidez, bloom, viñeta) y vuelven terminados en 8 bits.
-  Los cuadros con efectos siguen en la CPU: mandarlos a la GPU y traerlos de vuelta cuesta más de lo que ahorra.
-  Medido en my_jealousy_v3: 355 s → 295 s el video completo, mismo resultado (PSNR 47 dB). La CPU sigue al ~100 %
-  durante el render (es lo esperado). `WAKO_GPU=0` fuerza todo en CPU.
-- **Caché de pedazos:** al corregir, solo se vuelven a renderizar los pedazos cuyo contenido cambió. Una corrección chica tarda segundos o pocos minutos.
+- **Dos modos, uno u otro de punta a punta:** `python engine/build.py projects/<nombre> --device gpu|cpu|auto` (por defecto
+  `auto`: GPU si hay OpenGL 4.3 y `moderngl`; si no, CPU). La lógica del edit es una sola (`render.py`); en GPU las
+  operaciones de imagen corren como shaders (`engine/gpu.py`), los clips se decodifican con el decodificador de video de la
+  placa y el cuadro baja ya en NV12 al codificador. Mismo resultado que en CPU (PSNR mínimo 48 dB en 94 momentos con cada
+  efecto; 45 dB de mediana entre los videos codificados).
+- **Medido en my_jealousy_v3 (2:22, RX 7900 XT, Ryzen 5 7600X):** motor viejo 330 s · CPU 281 s · **GPU 55 s**.
+  Borrador GPU 45 s. En GPU el límite es el motor de video de la placa (decodifica y codifica en el mismo chip, al 100 %).
+- **El render en CPU está limitado por la velocidad de la RAM, no por los núcleos:** 5 procesos rinden lo mismo que 10 o 12.
+- `build.py` divide el video en pedazos de 2 s. Procesos de `render.py` fijos (CPU: núcleos − 2; GPU: hasta 6) toman pedazos
+  de una cola, los más pesados primero. Cada pedazo sale con la calidad final y se unen sin recodificar.
+- **Borrador:** `--draft` → `projects/<nombre>/borrador.mp4` (960x540, 30 fps, mismo look). Para que el usuario mire el edit
+  entero antes del render final y marque minutos.
+- **Cachés:** solo se vuelven a renderizar los pedazos que cambiaron, y el audio (`work_audio.wav`, ~40 s) se reusa si no
+  cambió nada de lo que usa `audio.py` (`audio.key`). Un build sin cambios tarda ~6 s.
+- Codifica con la GPU si está disponible (AMD AMF, NVIDIA NVENC, Intel QSV); si no, con la CPU. Ver: `python engine/encoders.py`.
+- **Cámaras lentas con RIFE** en la GPU (`tools/rife/`, se instala con `python engine/setup_rife.py`): ~10 s cada una
+  contra ~70 s por segundo con minterpolate (que queda de respaldo si RIFE no está).
+- **Audio:** la mezcla decodifica todos los archivos con una sola llamada a ffmpeg (~12 s; antes ~40 s: abrir ffmpeg
+  cuesta ~0.5 s en Windows y se abría ~50 veces).
 - Si un render falla por memoria, bajar `--workers`.
 
 ## Reglas

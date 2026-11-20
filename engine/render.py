@@ -14,23 +14,96 @@ F800, F600, F300 = FD + 'montserrat-latin-800-normal.woff', FD + 'montserrat-lat
 mode = sys.argv[1]
 N = int(round(TOTAL * FPS))
 
+# ---------- dispositivo: CPU o GPU, uno u otro de punta a punta ----------
+# WAKO_DEVICE=cpu: numpy + OpenCV en el procesador. WAKO_DEVICE=gpu: todo el cuadro en la placa (engine/gpu.py, OpenGL).
+# auto (por defecto): GPU si hay OpenGL 4.3 y ModernGL; si no, CPU. La lógica del edit es la misma en los dos modos:
+# solo cambian las operaciones de imagen (bloom, zoom, desenfoques, textos, luces), que gpu.py reemplaza al final.
+DEVICE = os.environ.get('WAKO_DEVICE', 'auto')
+if DEVICE != 'cpu':
+    try:
+        import gpu as GP
+        GPU_NAME = GP.init(W, H)
+        DEVICE = 'gpu'
+    except Exception as e:
+        if DEVICE == 'gpu':
+            raise SystemExit(f'WAKO_DEVICE=gpu pero no se pudo usar la GPU: {e}')
+        DEVICE = 'cpu'
+cv2.ocl.setUseOpenCL(False)        # modo CPU puro (sin OpenCL escondido)
+
 class Reader:
     def __init__(s, path):
-        s.path = path; s.c = cv2.VideoCapture(path); s.n = int(s.c.get(7)); s.i = -10; s.f = None
+        # s.i = índice del último cuadro leído. Recién abierto es -1 (antes era -10: si el primer cuadro pedido estaba
+        # en los primeros 2 s del clip se leía en orden y todo el tramo quedaba 9 cuadros = 0.15 s adelantado)
+        s.path = path; s.c = cv2.VideoCapture(path); s.n = int(s.c.get(7)); s.i = -1; s.f = None
+    def seek(s, idx):
+        """Salto verificado: cerca del inicio de algunos clips OpenCV cae varios cuadros DESPUÉS del pedido (medido: +9,
+        la imagen quedaba 0.15 s adelantada a la música y al efecto de kill). Se lee un cuadro, se pregunta dónde quedó
+        y, si se pasó, se salta más atrás; si no hay forma, se reabre el clip y se lee desde el principio."""
+        back = 0
+        while True:
+            tgt = idx - back
+            if tgt <= 0:
+                s.c.release(); s.c = cv2.VideoCapture(s.path); s.i = -1; s.f = None; return
+            s.c.set(cv2.CAP_PROP_POS_FRAMES, tgt)
+            ok, f = s.c.read()
+            if not ok: s.i = idx; return
+            pos = int(round(s.c.get(cv2.CAP_PROP_POS_FRAMES))) - 1
+            if pos <= idx: s.f = f; s.i = pos; return
+            back = 2 * back + 30
     def get(s, idx):
         idx = int(min(max(idx, 0), s.n - 1))
         if idx < s.i or idx > s.i + 120:
-            s.c.set(cv2.CAP_PROP_POS_FRAMES, idx); s.i = idx - 1
+            s.seek(idx)
         while s.i < idx:
             ok, f = s.c.read()
             if not ok: s.i = idx; break
             s.f = f; s.i += 1
         return s.f
+class HWReader:
+    """Modo GPU: lee el clip con ffmpeg usando el decodificador de video de la placa (-hwaccel auto) y entrega NV12;
+    el color se pasa a BGR en la GPU con la misma cuenta que OpenCV (cuadros idénticos, medido). La CPU baja de
+    ~14 ms a ~3 ms por cuadro y la decodificación corre en otro proceso, en paralelo con el render.
+    Salto: ffmpeg -ss (preciso: decodifica desde el keyframe y descarta hasta el cuadro pedido)."""
+    def __init__(s, path):
+        c = cv2.VideoCapture(path); s.n = int(c.get(7)); s.fps = c.get(5) or FPS
+        s.w, s.h = int(c.get(3)), int(c.get(4)); c.release()
+        s.path = path; s.fs = s.w * s.h * 3 // 2; s.p = None; s.i = -1; s.f = None
+    def close(s):
+        if s.p is not None:
+            try: s.p.kill(); s.p.wait()
+            except Exception: pass
+            s.p = None
+    def _open(s, idx):
+        s.close()
+        s.p = subprocess.Popen(['ffmpeg', '-v', 'error', '-hwaccel', 'auto', '-ss', f'{max(0.0, (idx - 0.5) / s.fps):.6f}',
+                                '-i', s.path, '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'nv12', '-'],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=s.fs * 2)
+        s.i = idx - 1
+    def get(s, idx):
+        idx = int(min(max(idx, 0), s.n - 1))
+        if idx == s.i and s.f is not None: return s.f
+        if s.p is None or idx < s.i or idx > s.i + 120:
+            s._open(idx)
+        while s.i < idx:
+            b = s.p.stdout.read(s.fs)
+            if len(b) < s.fs: s.i = idx; break
+            s.f = GP.NV12(b, s.w, s.h); s.i += 1
+        return s.f
+RDR = HWReader if DEVICE == 'gpu' and os.environ.get('WAKO_HWDEC', '1') != '0' else Reader
 class LazyRD(dict):
+    """Lectores abiertos por (clip, ranura). En modo GPU cada uno es un proceso de ffmpeg: se cierran los que no se
+    usan hace rato (quedan como mucho 6 abiertos)."""
+    MAX = 6
+    def __init__(self): super().__init__(); self.used = {}; self.tick = 0
     def __missing__(self, key):
-        r = Reader(f'clips/c{key[0]}.mp4'); self[key] = r; return r
+        if RDR is HWReader and len(self) >= self.MAX:
+            old = min(self, key=lambda k: self.used.get(k, 0)); self.pop(old).close()
+        r = RDR(f'clips/c{key[0]}.mp4'); self[key] = r; return r
+    def __getitem__(self, key):
+        self.tick += 1; self.used[key] = self.tick
+        return super().__getitem__(key)
 RD = LazyRD()
-SLOWS = {c: (Reader(p), t0) for c, (p, t0) in SLOWMO_SRC.items()}
+SLOWS = {c: (RDR(p), t0) for c, (p, t0) in SLOWMO_SRC.items()}
 def frame(seg, t, slot=0):
     return RD[(seg['clip'], slot)].get(round((seg['s0'] + (t - seg['o0'])) * FPS))
 
@@ -49,29 +122,15 @@ RR = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2)
 VIGN = np.clip(1 - 0.26 * np.clip(RR - 0.6, 0, None) ** 1.5, 0, 1)[..., None].astype(np.float32)
 DIST = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
 
-# ---------- GPU (OpenCL en la Radeon) ----------
-# Las operaciones pesadas por cuadro (color, bloom, zoom, desenfoques) corren en la GPU con OpenCL vía cv2.UMat.
-# WAKO_GPU=0 fuerza la CPU (mismo resultado, más lento). Si no hay OpenCL, se usa la CPU sola.
-USE_GPU = os.environ.get('WAKO_GPU', '1') != '0' and cv2.ocl.haveOpenCL()
-# Efectos sueltos en la GPU (bloom, zoom, desenfoques con ida y vuelta a la RAM): medido, no conviene con 10 procesos
-# (cada viaje de 25 MB cuesta más de lo que ahorra). Solo los cuadros planos van enteros a la GPU. WAKO_GPU_FX=1 los activa.
-GPU_FX = USE_GPU and os.environ.get('WAKO_GPU_FX', '0') == '1'
-if USE_GPU:
-    cv2.ocl.setUseOpenCL(True)
-    VIGN3_U = cv2.UMat(np.ascontiguousarray(np.repeat(VIGN, 3, axis=2)))
-U = cv2.UMat
-_KEEP_U = False
-def _f32(u): return cv2.addWeighted(u, 1.0, u, 0.0, 0.0, dtype=cv2.CV_32F)
-def _scale(u, k): return cv2.addWeighted(u, float(k), u, 0.0, 0.0)
-def _bloom_u(fu, amount, thresh):
-    sm = cv2.resize(fu, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
-    hi = cv2.subtract(sm, (float(thresh),) * 3 + (0.0,))
-    _, hi = cv2.threshold(hi, 0, 0, cv2.THRESH_TOZERO)
-    hi = _scale(hi, 255 / (255 - thresh))
-    g = cv2.addWeighted(cv2.GaussianBlur(hi, (0, 0), 8), 1.0, cv2.GaussianBlur(hi, (0, 0), 26), 0.8, 0.0)
-    return cv2.addWeighted(fu, 1.0, cv2.resize(g, (W, H), interpolation=cv2.INTER_LINEAR), float(amount), 0.0)
+
+# ayudas que usan los dos modos (gpu.py tiene su versión)
+clip = np.clip
+def chmean(f): return f.mean(axis=2, keepdims=True)
+def zeros(): return np.zeros((H, W, 3), np.float32)
+def center_mean(f): h_, w_ = f.shape[:2]; return float(f[h_ // 4:3 * h_ // 4:6, w_ // 4:3 * w_ // 4:6].mean())
+def to_u8(f): return np.clip(f, 0, 255).astype(np.uint8)
+
 def bloom(f, amount, thresh=185):
-    if GPU_FX: return _bloom_u(U(np.ascontiguousarray(f, np.float32)), amount, thresh).get()
     sm = cv2.resize(f, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
     hi = np.clip(sm - thresh, 0, None) * (255 / (255 - thresh))
     g = cv2.GaussianBlur(hi, (0, 0), 8) + 0.8 * cv2.GaussianBlur(hi, (0, 0), 26)
@@ -85,13 +144,6 @@ def streak(f, amount, tint):
     s1 = s1 / max(1.0, float(s1.max()) * 1.6)
     return f + cv2.resize(s1 * tint, (W, H), interpolation=cv2.INTER_LINEAR) * amount * 120
 def grade(f8):
-    if _KEEP_U or GPU_FX:
-        u = cv2.LUT(U(f8), LUT)
-        h_, s_, v_ = cv2.split(cv2.cvtColor(u, cv2.COLOR_BGR2HSV))
-        u = cv2.cvtColor(cv2.merge([h_, cv2.convertScaleAbs(s_, alpha=1.15), v_]), cv2.COLOR_HSV2BGR)
-        u = cv2.addWeighted(u, 1.25, cv2.GaussianBlur(u, (0, 0), 1.2), -0.25, 0)
-        r = cv2.multiply(_bloom_u(_f32(u), 0.10, 205), VIGN3_U)
-        return r if _KEEP_U else r.get()
     f = cv2.LUT(f8, LUT)
     hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV)
     hsv[..., 1] = cv2.convertScaleAbs(hsv[..., 1], alpha=1.15)
@@ -104,28 +156,17 @@ def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
         hw, hh = W / (2 * s), H / (2 * s); cx = min(max(cx, hw), W - hw); cy = min(max(cy, hh), H - hh)
     if abs(s - 1) < 1e-4 and abs(cx - W / 2) < .5 and abs(cy - H / 2) < .5 and dx == 0 and dy == 0: return f
     M = np.float32([[s, 0, W / 2 - s * cx + dx], [0, s, H / 2 - s * cy + dy]])
-    if GPU_FX and not isinstance(f, cv2.UMat):
-        return cv2.warpAffine(U(np.ascontiguousarray(f, np.float32)), M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT).get()
     return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
 def zoom(f, z, dx=0, dy=0): return affine(f, z, W / 2, H / 2, dx, dy, clamp=False)
 def shift(f, dx):
     M = np.float32([[1, 0, dx], [0, 1, 0]])
-    if GPU_FX: return cv2.warpAffine(U(np.ascontiguousarray(f, np.float32)), M, (W, H), borderMode=cv2.BORDER_REFLECT).get()
     return cv2.warpAffine(f, M, (W, H), borderMode=cv2.BORDER_REFLECT)
 def hblur(f, L):
     L = int(L)
     if L < 3: return f
-    if GPU_FX: return cv2.blur(U(np.ascontiguousarray(f, np.float32)), (L, 1), borderType=cv2.BORDER_REFLECT).get()
     return cv2.blur(f, (L, 1), borderType=cv2.BORDER_REFLECT)
 def radial_blur(f, strength, n=5):
     if strength < 0.004: return f
-    if GPU_FX:      # los n zooms se suman en la GPU sin ir y volver a la RAM
-        fu = U(np.ascontiguousarray(f, np.float32)); acc = fu
-        for i in range(1, n):
-            z = 1 + strength * i / (n - 1)
-            M = np.float32([[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]])
-            acc = cv2.add(acc, cv2.warpAffine(fu, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT))
-        return _scale(acc, 1.0 / n).get()
     acc = f.copy()
     for i in range(1, n): acc += zoom(f, 1 + strength * i / (n - 1))
     return acc / n
@@ -142,10 +183,11 @@ def leak(px, inten=1.0, col=(150, 205, 255)):
     d = np.sqrt(((xx - px * W) / (W * 0.45)) ** 2 + ((yy - H * 0.45) / (H * 0.9)) ** 2)
     return np.exp(-d ** 2 * 2.2)[..., None] * inten * np.array(col, np.float32)
 def ring(f, te, dur=0.45, strength=1.0, col=(255, 240, 225)):
-    if te < 0 or te > dur: return
+    if te < 0 or te > dur: return f
     x = te / dur; rad = 60 + 1000 * eo(x); th = 22 * (1 - x) + 3
     a = np.exp(-((DIST - rad) / th) ** 2)[..., None] * (1 - x) * 0.55 * strength
     f[:] = f * (1 - a) + np.array(col, np.float32) * a
+    return f
 
 # ---------- text helpers ----------
 def text_mask(txt, font, track=0, pad=60):
@@ -203,30 +245,34 @@ def grad_col(theta):
     u = (np.sin(theta) * 0.5 + 0.5)
     c1 = np.array([255, 70, 145], np.float32); c2 = np.array([210, 60, 255], np.float32); c3 = np.array([255, 220, 60], np.float32)
     return np.where(u[..., None] < 0.5, c1 + (c2 - c1) * (u[..., None] * 2), c2 + (c3 - c2) * ((u[..., None] - 0.5) * 2))
+def logo_ring(f, t, sweep, pulse):
+    rel = (ANG + math.pi / 2) % (2 * math.pi)
+    on = (rel <= sweep).astype(np.float32)[..., None]
+    col = grad_col(ANG + t * 1.6)
+    return f + (RING_BAND * on * col * 1.0 + RING_GLOW * on * col * (0.35 + 0.35 * pulse))
+LG_M = LG * LMASK
+def paste_avatar(f, sc, al):
+    img = LG_M
+    if abs(sc - 1) > 1e-3:
+        img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_LINEAR)
+    h, w = img.shape[:2]; x0, y0 = int(LOGO_C[0] - w / 2), int(LOGO_C[1] - h / 2)
+    m = cv2.resize(LMASK, (w, h))[..., None]
+    f[y0:y0 + h, x0:x0 + w] = f[y0:y0 + h, x0:x0 + w] * (1 - m * al) + img * al
+    return f
 LOGO_HITS = None
 def logo(t):
     global LOGO_HITS
     if LOGO_HITS is None: LOGO_HITS = [o for o, i in out_hits(0, segments[0]['o1'] + 0.01)]
     L = segments[0]['o1']
-    f = np.zeros((H, W, 3), np.float32)
+    f = zeros()
     pulse = max([math.exp(-(t - o) / 0.18) for o in LOGO_HITS if 0 <= t - o < 0.8] + [0])
     # soft background light
-    f += leak(0.5 + 0.08 * math.sin(t * 1.3), 0.10 + 0.05 * pulse, (180, 60, 140))
+    f = f + leak(0.5 + 0.08 * math.sin(t * 1.3), 0.10 + 0.05 * pulse, (180, 60, 140))
     # ring: sweep in, rotate gradient
-    sweep = eio(t / 1.0) * 2 * math.pi
-    rel = (ANG + math.pi / 2) % (2 * math.pi)
-    on = (rel <= sweep).astype(np.float32)[..., None]
-    col = grad_col(ANG + t * 1.6)
-    f += RING_BAND * on * col * 1.0 + RING_GLOW * on * col * (0.35 + 0.35 * pulse)
+    f = logo_ring(f, t, eio(t / 1.0) * 2 * math.pi, pulse)
     # avatar
     al = ss((t - 0.25) / 0.5); sc = 0.88 + 0.12 * eo((t - 0.25) / 0.7)
-    if al > 0:
-        img = LG * LMASK
-        if abs(sc - 1) > 1e-3:
-            img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_LINEAR)
-        h, w = img.shape[:2]; x0, y0 = int(LOGO_C[0] - w / 2), int(LOGO_C[1] - h / 2)
-        m = cv2.resize(LMASK, (w, h))[..., None]
-        f[y0:y0 + h, x0:x0 + w] = f[y0:y0 + h, x0:x0 + w] * (1 - m * al) + img * al
+    if al > 0: f = paste_avatar(f, sc, al)
     # texts
     a, g1, g2 = TV; ta = ss((t - 0.75) / 0.45); dy = 18 * (1 - eo((t - 0.75) / 0.6))
     blit(f, g2, W / 2, 660 + dy, (255, 80, 170), 0.55 * ta * (0.8 + 0.4 * pulse)); blit(f, g1, W / 2, 660 + dy, (255, 200, 235), 0.35 * ta); blit(f, a, W / 2, 660 + dy, (255, 255, 255), ta)
@@ -234,7 +280,7 @@ def logo(t):
     blit(f, g1, W / 2, 762 + dy, (255, 210, 120), 0.4 * ta); blit(f, a, W / 2, 762 + dy, (240, 240, 240), ta)
     a, g1, g2 = SUB2; ta = ss((t - 1.45) / 0.45)
     blit(f, a, W / 2, 812, (200, 200, 200), ta)
-    if t < 0.35: f *= t / 0.35
+    if t < 0.35: f = f * (t / 0.35)
     # exit: glow burst into the play
     if t > L - 0.4:
         k = ss((t - (L - 0.4)) / 0.4); f = bloom(f, 2.5 * k, 60) + 255 * 0.85 * k ** 2
@@ -303,9 +349,9 @@ def build_layout(words):
     return sp, lay
 for p in PHRASES: p['sp'], p['lay'] = build_layout(p['words'])
 def draw_phrase(f, t, p):
-    if t < p['start'] or t > p['vanish'][1] + 0.2: return
+    if t < p['start'] or t > p['vanish'][1] + 0.2: return f
     dim = ss((t - p['start']) / 0.4) * (1 - ss((t - p['vanish'][0]) / (p['vanish'][1] - p['vanish'][0])))
-    f *= 1 - 0.38 * dim
+    f = f * (1 - 0.38 * dim)
     pulse = max([math.exp(-(t - o) / 0.12) for o, w, l in p['words'] if 0 <= t - o < 0.5] + [0])
     for k, (o, w, l) in enumerate(p['words']):
         te = t - o
@@ -319,9 +365,10 @@ def draw_phrase(f, t, p):
         blit(f, g2, cx, cy + dy, (255, 170, 120), al * (0.35 + 0.45 * pulse), sc)
         blit(f, g1, cx, cy + dy, (255, 235, 215), al * (0.35 + 0.35 * pulse), sc)
         blit(f, a, cx, cy + dy, (255, 255, 255), al * 0.9, sc)
+    return f
 def interlude(t):
     f = orbs(t)
-    if t - INTER[0] < 0.3: f *= (t - INTER[0]) / 0.3
+    if t - INTER[0] < 0.3: f = f * ((t - INTER[0]) / 0.3)
     return f
 
 # ---------- outro ----------
@@ -330,10 +377,10 @@ DOT = text_mask('.', ImageFont.truetype(F800, 70), 0)
 OUT2 = text_mask('twitch.tv/el_wako', ImageFont.truetype(F600, 32), 6)
 out_hits_o = [o for o, i in out_hits(OUTRO0, TOTAL)]
 def outro(t):
-    te = t - OUTRO0; f = np.zeros((H, W, 3), np.float32)
+    te = t - OUTRO0; f = zeros()
     pulse = max([math.exp(-(t - o) / 0.2) for o in out_hits_o if 0 <= t - o < 0.8] + [0])
     end_fade = 1 - ss((te - (OUTRO_LEN - 1.3)) / 1.1)
-    f += leak(0.5, (0.08 + 0.05 * pulse) * end_fade, (200, 90, 150))
+    f = f + leak(0.5, (0.08 + 0.05 * pulse) * end_fade, (200, 90, 150))
     a, g1, g2 = OUT1; al = ss((te - 0.3) / 0.6) * end_fade; dy = 14 * (1 - eo((te - 0.3) / 0.9))
     w1 = a.shape[1] - 120
     blit(f, g2, W / 2, H / 2 - 20 + dy, (255, 90, 180), al * (0.4 + 0.3 * pulse)); blit(f, g1, W / 2, H / 2 - 20 + dy, (255, 215, 240), 0.3 * al); blit(f, a, W / 2, H / 2 - 20 + dy, (255, 255, 255), al)
@@ -362,7 +409,7 @@ def seg_frame(seg, t, slot=0):
         src = slow_src(seg, t); rd, t0_ = SLOWS[seg['clip']]; f = grade(rd.get(round((src - t0_) * 240)))
         u = (t - seg['o0']) / (seg['o1'] - seg['o0'])
         f = zoom(f, 1 + 0.06 * eio(u))
-        mean = f.mean(axis=2, keepdims=True); f = mean + (f - mean) * (1 - 0.35 * ss(u / 0.4))   # slight desaturation
+        mean = chmean(f); f = mean + (f - mean) * (1 - 0.35 * ss(u / 0.4))   # slight desaturation
         return f * (1 - 0.15 * ss(u / 0.4))
     f = grade(frame(seg, t, slot))
     if k == 'zoom_out':
@@ -374,7 +421,7 @@ def seg_frame(seg, t, slot=0):
     elif k == 'face_out':
         x = eio((t - seg['o0'] - 0.5) / 1.5); s = 1.75 ** x; cx, cy = cam_center(END_CLIP)
         f = affine(f, s, W / 2 + (cx - W / 2) * x, H / 2 + (cy - H / 2) * x)
-        f *= 1 - ss((t - (seg['o1'] - 1.3)) / 1.3)
+        f = f * (1 - ss((t - (seg['o1'] - 1.3)) / 1.3))
     if seg['play'] == 100 and t < O_DROP2:            # ace: black lifts gradually, lights linger
         r = ss((t - REV0) / (O_DROP2 - REV0 - 0.25))
         f = f * (0.12 + 0.88 * r) * r ** 0.6 + orbs(t) * (1 - r)
@@ -389,26 +436,10 @@ SH = np.random.default_rng(5).normal(0, 1, (N + 10, 2))
 ACE_TINTS = [(255, 220, 120), (230, 120, 255), (120, 210, 255), (255, 160, 200), (255, 240, 220)]
 ace_idx = {i: j for j, i in enumerate([i for i, (k, c) in enumerate(zip(kills, kill_play)) if c == ACE_CLIP])}
 
-def _plain(t, S):
-    if not USE_GPU or os.environ.get('WAKO_FAST', '1') == '0': return False
-    if S['kind'] != 'play' or (S['play'] == 100 and t < O_DROP2) or t > TOTAL - 0.5: return False
-    for ob, typ, bi in boundaries:
-        if (typ in TW and abs(t - ob) < TW[typ]) or (typ == 'black_in' and ob - 1.4 <= t < ob): return False
-    for ko in kills:
-        if -0.017 <= t - ko <= 0.7: return False
-    for o, spr in CAPS:
-        if -0.1 <= t - o <= 1.7: return False
-    if WORDS or PHRASES: return False
-    return True
-def render(n):
-    global _KEEP_U
+def render_f(n):
+    """Cuadro n terminado en float (numpy en CPU, G en GPU)."""
     t = n / FPS
     S = segments[seg_index(t)]; f = None
-    if _plain(t, S):        # todo en la GPU y vuelve el cuadro terminado en 8 bits
-        _KEEP_U = True
-        try: u = grade(frame(S, t, 0))
-        finally: _KEEP_U = False
-        return cv2.convertScaleAbs(u, alpha=1.0, beta=-0.5).get()   # -0.5: trunca como el astype de la CPU
     for ob, typ, bi in boundaries:
         if typ in TW and abs(t - ob) < TW[typ]:
             w = TW[typ]; p = (t - (ob - w)) / (2 * w)
@@ -421,7 +452,7 @@ def render(n):
             elif typ.startswith('light'):
                 k = math.sin(math.pi * p); m = ss((p - 0.4) / 0.2)
                 f = bloom(A * (1 - m) + B * m, 1.15 * k, 140) + leak(-0.2 + 1.4 * p, 0.5 * k)
-                f = f + (255 - np.clip(f, 0, 255)) * 0.08 * k
+                f = f + (255 - clip(f, 0, 255)) * 0.08 * k
             elif typ == 'mega':
                 # exaggerated full-screen hit: punch-in + chroma + streak burst on A, white flash peak, B explodes out of light
                 k = math.sin(math.pi * p); m = ss((p - 0.45) / 0.1)
@@ -431,7 +462,7 @@ def render(n):
                 f = rgb_split(f, 24 * k)
                 f = streak(f, 0.8 * k, np.array([1.0, 0.85, 0.75], np.float32))
                 f = bloom(f, 0.5 * k, 190) + leak(1.2 - 1.4 * p, 0.25 * k, (255, 200, 240)) + leak(-0.2 + 1.4 * p, 0.2 * k)
-                f = f + (255 - np.clip(f, 0, 255)) * 0.85 * max(0, 1 - abs(p - 0.5) / 0.07)
+                f = f + (255 - clip(f, 0, 255)) * 0.85 * max(0, 1 - abs(p - 0.5) / 0.07)
             elif typ == 'zoom':
                 m = ss((p - 0.4) / 0.2)
                 Az = radial_blur(zoom(A, 1 + 0.35 * eio(p)), 0.16 * math.sin(math.pi * p))
@@ -475,7 +506,7 @@ def render(n):
             j = ace_idx[ki]; last = j == len(ace_idx) - 1; g = 1.0 + 0.3 * last
             # golpe fuerte normalizado por el brillo del centro del cuadro (donde está el enemigo): en mapas claros
             # (Dust2 al sol) la luz, el destello y el bloom quemaban la imagen y la kill no se veía
-            h_, w_ = f.shape[:2]; cl = float(f[h_ // 4:3 * h_ // 4:6, w_ // 4:3 * w_ // 4:6].mean()) / 255
+            cl = center_mean(f) / 255
             ka = min(1.0, max(0.4, 1.0 - (cl - 0.45) * 3.0))
             tint = np.array(ACE_TINTS[j], np.float32)
             stk += 0.4 * g * ka * math.exp(-te / 0.16); stint = tint / 255
@@ -497,21 +528,33 @@ def render(n):
     if stk > 0.01: f = streak(f, stk, stint)
     if lk is not None and lk[1] > 0.01: f = f + leak(lk[0], lk[1], lk[2])
     if pop > 0.01:
-        mean = f.mean(axis=2, keepdims=True); f = mean + (f - mean) * (1 + 0.4 * pop); f = (f - 128) * (1 + 0.12 * pop) + 128
+        mean = chmean(f); f = mean + (f - mean) * (1 + 0.4 * pop); f = (f - 128) * (1 + 0.12 * pop) + 128
     f = zoom(f, z, dx, dy)
     if db > 2: f = hblur(f, db)
     if rad > 0.004: f = radial_blur(f, rad)
     f = rgb_split(f, split)
-    for te, dur, st, col in rings: ring(f, te, dur, st, col)
-    if white > 0.005: f = f + (255 - np.clip(f, 0, 255)) * min(white, 0.8)
+    for te, dur, st, col in rings: f = ring(f, te, dur, st, col)
+    if white > 0.005: f = f + (255 - clip(f, 0, 255)) * min(white, 0.8)
     # words over interlude + ace reveal
     if WORDS and WORDS[0][0] - 0.05 <= t <= VANISH[1] + 0.2:
         translucent = ss((t - REV0) / 1.0)
         draw_words(f, t, translucent)
-    for p in PHRASES: draw_phrase(f, t, p)
+    for p in PHRASES: f = draw_phrase(f, t, p)
     for o, spr in CAPS: draw_cap(f, spr, t - o)
-    if t > TOTAL - 0.5: f *= max(0, (TOTAL - t) / 0.5)
-    return np.clip(f, 0, 255).astype(np.uint8)
+    if t > TOTAL - 0.5: f = f * max(0, (TOTAL - t) / 0.5)
+    return f
+def render(n): return to_u8(render_f(n))
+
+if DEVICE == 'gpu':
+    # misma lógica, operaciones de imagen en la placa (engine/gpu.py)
+    GP.setup(globals())
+    _R = globals()
+    clip, chmean, zeros, center_mean, to_u8 = GP.clip, GP.chmean, GP.zeros, GP.center_mean, GP.to_u8
+    bloom, streak, grade, affine, zoom, shift = GP.bloom, GP.streak, GP.grade, GP.affine, GP.zoom, GP.shift
+    hblur, radial_blur, rgb_split, leak, ring, blit, darken = GP.hblur, GP.radial_blur, GP.rgb_split, GP.leak, GP.ring, GP.blit, GP.darken
+    logo_ring = lambda f, t, sweep, pulse: GP.logo_ring(f, t, sweep, pulse, _R)
+    paste_avatar = lambda f, sc, al: GP.paste_avatar(f, _R, sc, al)
+    orbs = lambda t: GP.orbs(t, _R)
 
 if mode == 'raw':     # prueba: guarda cuadros a resolución completa sin comprimir (comparar CPU vs GPU)
     os.makedirs(sys.argv[3], exist_ok=True)
@@ -521,10 +564,35 @@ elif mode == 'preview':
     for tt in sys.argv[2].split(','):
         os.makedirs('previews', exist_ok=True); cv2.imwrite(f'previews/pv_{float(tt):06.2f}.jpg', cv2.resize(render(int(float(tt) * FPS)), (640, 360)))
 else:
-    a, b, out = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
-    enc = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-                            *video_encoder_args('intermediate'), out], stdin=subprocess.PIPE)
-    for n in range(a, min(b, N)):
-        enc.stdin.write(render(n).tobytes())
-        if n % 300 == 0: print(n, flush=True)
-    enc.stdin.close(); enc.wait(); print('done', out)
+    def part(a, b, out, bitrate=30, step=1):
+        """Renderiza los cuadros [a, b) y los codifica directo con la calidad final (build.py los une sin recodificar).
+        step=2: borrador (30 fps, 960x540, bitrate bajo): mismo look, la mitad de cuadros."""
+        draft = step > 1
+        w, h = (W // 2, H // 2) if draft else (W, H)
+        gpu = DEVICE == 'gpu'      # en GPU el cuadro baja ya en NV12, el formato que toma el codificador
+        enc = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'nv12' if gpu else 'bgr24',
+                                '-s', f'{w}x{h}', '-r', str(FPS / step), '-i', '-',
+                                *video_encoder_args('final', bitrate, src_nv12=gpu), out],
+                               stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+        for n in range(a, min(b, N), step):
+            if gpu:
+                f = render_f(n)
+                enc.stdin.write(GP.to_nv12(GP.area2(f) if draft else f))
+                continue
+            fr = render(n)
+            if draft: fr = cv2.resize(fr, (w, h), interpolation=cv2.INTER_AREA)
+            enc.stdin.write(fr.tobytes())
+        enc.stdin.close()
+        if enc.wait() != 0: raise SystemExit(f'Falló ffmpeg en {out}')
+    if mode == 'serve':
+        # proceso que queda vivo y recibe pedazos por stdin ("a b salida bitrate paso"): carga clips, fuentes y GPU una
+        # sola vez y build.py le va dando el próximo pedazo libre (reparto parejo aunque unos pedazos pesen más que otros)
+        sys.stdin.reconfigure(encoding='utf-8'); sys.stdout.reconfigure(encoding='utf-8')   # rutas con acentos
+        for line in sys.stdin:
+            if not line.strip(): continue
+            a, b, out, br, st = line.split('\t')
+            part(int(a), int(b), out, int(br), int(st))
+            sys.stdout.write(f'@@done\t{out}\n'); sys.stdout.flush()
+    else:   # part a b salida [bitrate] [paso]
+        part(int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], *(int(x) for x in sys.argv[5:7]))
+        print('done', sys.argv[4])

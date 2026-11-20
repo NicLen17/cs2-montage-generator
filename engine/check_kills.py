@@ -11,7 +11,7 @@ Mínimos (pisos):  normal 0.8/0.6 · primera de la play 1.2/0.6 · poco visible 
                   movimiento técnico (tech={i: inicio}) inicio+0.3 / 0.8 · última de la play 0.8 / 0.7 + media transición.
 Ninguna kill a menos de (media transición + 0.15 s) del centro de un corte. Excepción: el corte seco del bang bang.
 """
-import os, sys, importlib.util
+import json, os, sys, importlib.util
 
 ENGINE = os.path.dirname(os.path.abspath(__file__))
 HALF = {'mega': 0.30, 'whip_lr': 0.13, 'whip_rl': 0.13, 'light': 0.17, 'zoom': 0.13, 'whip_short': 0.075,
@@ -85,6 +85,10 @@ def dead_time(p, segs, plays, bound_at, chain):
         kind = 'poco visible' if j in hard else 'normal'
         lim = (POST_MAX[kind] + HALF.get(typ, 0.0)) * k_(o)
         if j in ctx: lim = ctx[j][1]
+        # una reacción (grito, festejo) justo después de la kill que cierra la play justifica la cola: se deja oír
+        for e in getattr(p, '_RX', {}).get(c, []):
+            if e.get('j') == j and e.get('kind') in getattr(p, 'REACT_KINDS', ('grupal',)) and e['t0'] - e['kill'] <= 1.8 and j < len(p.SHOTS.get(c, [])):
+                lim = max(lim, e['t0'] - p.SHOTS[c][j] + min(0.9, e['t1'] - e['t0']) + HALF.get(typ, 0.0))
         if t1 - o > lim + 1e-3:
             out.append(f'c{c} video {o:.2f}s: {t1 - o:.2f}s después de la última kill de la toma (máx {lim:.2f}) → cortá antes, que no quede mirando la nada')
     return out
@@ -95,6 +99,8 @@ def main():
     except Exception: pass
     project = os.path.abspath(sys.argv[1])
     p = load_plan(project)
+    rxp = os.path.join(project, 'reactions.json')
+    p._RX = {int(k): v for k, v in json.load(open(rxp)).items()} if os.path.exists(rxp) and getattr(p, 'REACTIONS', True) is not False else {}
     segs = [s for s in p.segments if s['kind'] in VIS]
     allp = list(p.ACT1) + list(p.ACT2)
     plays = {P['clip']: P for P in allp if 'clip' in P}
@@ -184,6 +190,25 @@ def main():
         for x in dead: print('  -', x)
     else:
         print('Sin tiempos muertos: cada toma arranca cerca de la acción y corta después de la última kill.')
+    # reacciones (engine/reactions.py): la del cierre de cada play se oye solo si el tramo la incluye
+    kfp = os.path.join(project, 'kf.json')
+    KF = {int(k): sorted(v) for k, v in json.load(open(kfp)).items()} if os.path.exists(kfp) else {}
+    rx_lines = []
+    for c, evs in sorted(p._RX.items()):
+        sc = [g for g in p.segments if g['clip'] == c and g['kind'] in ('play', 'face_out', 'zoom_out')]
+        shown = [k for k in KF.get(c, []) if any(g['s0'] - 0.3 <= k <= g['s1'] + 0.3 for g in sc)]
+        if not sc or not shown: continue
+        for e in evs:
+            if abs(e['kill'] - max(shown)) > 0.05 or e.get('kind') not in getattr(p, 'REACT_KINDS', ('grupal',)): continue
+            end = max(g['s1'] for g in sc)
+            if end >= e['t0'] + 0.3: rx_lines.append(f"c{c} {e['kind']} en {e['t0']:.2f}s: entra ({min(end, e['t1']) - e['t0']:.2f}s se resaltan)")
+            elif e['t0'] - e['kill'] <= 1.8:
+                rx_lines.append(f"c{c} {e['kind']} en {e['t0']:.2f}s: queda AFUERA (el tramo termina en {end:.2f}s) → "
+                                f"fin de tramo {min(e['t0'] + 0.9, e['t1']):.2f}s para que se oiga (la cola queda justificada)")
+            else:
+                rx_lines.append(f"c{c} {e['kind']} en {e['t0']:.2f}s: llega {e['t0'] - e['kill']:.1f}s después de la kill, demasiado tarde (se deja afuera)")
+    if rx_lines:
+        print('\nReacciones al cierre de las plays:'); [print('  -', x) for x in rx_lines]
     if '--times' in sys.argv:
         print('\nPreviews (un cuadro por kill de las plays con título):'); print(','.join(f'{t:.2f}' for t in previews))
     sys.exit(1 if problems else 0)

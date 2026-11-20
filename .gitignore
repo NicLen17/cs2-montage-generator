@@ -23,3 +23,6 @@ projects/my_jealousy_v3/*
 !projects/my_jealousy_v2/
 projects/my_jealousy_v2/*
 !projects/my_jealousy_v2/vocal_reps.py
+
+# Programas externos descargados (RIFE para la cámara lenta: python engine/setup_rife.py)
+tools/
