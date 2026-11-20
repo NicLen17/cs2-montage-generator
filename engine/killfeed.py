@@ -2,7 +2,8 @@
 
 Uso desde código (lo llama engine/analyze_clips.py):
     fr = scan('clips/c3.mp4')          # etapa 1 (lenta, decodifica el video): entradas con borde rojo de cada cuadro
-    ev = detect(fr, name=tpl)          # etapa 2 (rápida): una kill por entrada NUEVA en la que el jugador es el atacante
+    names = player_names(frs)          # nombres del jugador deducidos de todas las plays del proyecto
+    ev = detect(fr, names=names)       # etapa 2 (rápida): una kill por entrada NUEVA en la que el jugador es el atacante
 
 Cómo lee el killfeed:
   - Las entradas propias (las que involucran al jugador) tienen borde rojo. En cada cuadro se buscan los bordes
@@ -11,10 +12,15 @@ Cómo lee el killfeed:
   - Cada caja se sigue en el tiempo (dura ~5-6 s en pantalla; cuando vence la de arriba, las demás suben ~34 px).
     Una entrada que aparece y dura menos de MIN_LIFE se descarta (parpadeo). Una que ya estaba en el primer cuadro
     es de antes del clip.
-  - Kill o muerte: dentro de la caja se busca el nombre del jugador (plantilla). Pegado al borde izquierdo = mató;
-    pegado al derecho = murió; en el medio (después de un "+") = asistencia. La plantilla sale de las kills ya
-    verificadas (engine/assets/kf_name.npz, se arma con engine/eval_kills.py --learn-name) o, si no coincide con
-    nada del clip, del texto que más se repite a la izquierda de las entradas del propio clip.
+  - Una entrada nueva aparece siempre ABAJO de las que ya están: si al nacer hay otra caja roja debajo, es una que
+    se volvió a leer (cuando vence la de arriba todas suben ~34 px, a veces dos o tres lugares de golpe).
+  - Kill o muerte: dentro de la caja se busca el nombre del jugador. Es el primer nombre (los íconos de cegado, bomba
+    o rango que van antes no cuentan) = mató, también en "Jugador + Compañero → X"; al final = murió; después de
+    otro nombre ("Compañero + Jugador → X") = asistencia. Después de la muerte del jugador no hay kills propias.
+  - El jugador se deduce de cada play: es el nombre que aparece en más entradas rojas distintas (no hay nicks fijos).
+    Si en un clip no se repite ningún nombre, se usan los deducidos de los otros clips del proyecto (player_names).
+  - Con un flash la pantalla queda blanca y el borde rosado pálido: en esos cuadros también valen pares de líneas finas
+    rosadas.
   - Cada evento lleva un puntaje de confianza (0-1). Los dudosos (< DOUBT) son los únicos que hay que mirar a ojo.
 """
 import os, subprocess, json
@@ -24,9 +30,11 @@ import numpy as np, cv2
 CROP = (1250, 24, 670, 394)      # x, y, ancho, alto (1920x1080); se reescala si el clip tiene otra resolución
 MIN_LINE = 100                   # píxeles rojos mínimos en una fila para ser borde horizontal de una entrada
 MIN_LIFE = 0.5                   # s: menos que esto en pantalla = parpadeo
-SCAN_VERSION = 5                 # subir si cambia la etapa 1 (invalida catalog/kf_cache/)
+FLASH = 165                      # brillo medio del recorte a partir del cual se considera la pantalla blanca de un flash
+SCAN_VERSION = 7                 # subir si cambia la etapa 1 (invalida catalog/kf_cache/)
 GAP = 7                          # px sin texto que separan el nombre del arma o del "+"
 NAME_OK = 0.7                    # parecido mínimo con la plantilla para reconocer el nombre del jugador
+DEATH_OK = 0.55                  # parecido mínimo para dar por muerte una entrada con el jugador al final (aunque esté desvaída)
 DOUBT = 0.6                      # eventos con confianza menor se marcan para revisar a ojo
 
 
@@ -68,6 +76,23 @@ def entries(reg, with_lines=False):
         xl, xr = max(rs, key=lambda q: q[1] - q[0])
         if xr - xl >= MIN_LINE: lines.append((ya, yb, xl, xr))
         elif xr - xl >= MIN_LINE * 0.6: weak.append((ya, yb, xl, xr))
+    # con un flash (pantalla blanca) el borde queda rosado pálido, apenas más rojo que el resto: se aceptan como
+    # bordes las líneas finas rosadas que no tienen rosado arriba ni abajo, y solo de a pares (las dos de una caja)
+    r_, g_, b_ = reg[..., 2], reg[..., 1], reg[..., 0]
+    pm = (r_ - np.maximum(g_, b_) > 8) & (b_ >= g_ - 12) & (r_ > 150) & ~rm
+    fc = pm.sum(1) if reg.mean() > FLASH else np.zeros(H, int); faint = []         # solo con la pantalla blanca
+    for ya, yb in _runs(fc > MIN_LINE, gap=0):
+        top = fc[ya:yb + 1].max()
+        if yb - ya > 6 or fc[max(0, ya - 4)] > 0.4 * top or fc[min(H - 1, yb + 4)] > 0.4 * top: continue
+        rs = _runs(pm[ya:yb + 1].any(0), gap=30)
+        xl, xr = max(rs, key=lambda q: q[1] - q[0])
+        if xr - xl >= MIN_LINE and not any(abs(ya - l[0]) <= 3 for l in lines): faint.append((ya, yb, xl, xr))
+    pr = (pm | rm)
+    for ya, yb, xl, xr in list(faint):              # la otra línea de la caja suele salir cortada: basta un tercio
+        for dy in range(24, 39):
+            y2 = ya + dy
+            if y2 + 1 < H and pr[y2:y2 + 2, xl:xr + 1].any(0).mean() >= 0.35 and not any(abs(y2 - f[0]) <= 3 for f in faint + lines):
+                faint.append((y2, y2 + 1, xl, xr)); break
 
     def edge(x0, x1, y0, y1):
         """Columna con más rojo entre y0 e y1 (borde vertical) y qué fracción de la altura cubre."""
@@ -77,12 +102,14 @@ def entries(reg, with_lines=False):
         return x0 + k, float(f[k])
 
     cand = []
-    for i, (ya, yb, xl, xr) in enumerate(lines):
-        for j in range(i + 1, len(lines)):          # par de bordes horizontales
-            ya2, yb2, xl2, xr2 = lines[j]
+    both = sorted([(l, True) for l in lines] + [(l, False) for l in faint])
+    for i, ((ya, yb, xl, xr), strong) in enumerate(both):
+        for j in range(i + 1, len(both)):           # par de bordes horizontales
+            (ya2, yb2, xl2, xr2), strong2 = both[j]
             if ya2 - ya > 40: break
             if 24 <= ya2 - ya <= 38 and abs(xr - xr2) <= 8 and (abs(xl - xl2) <= 8 or min(xr - xl, xr2 - xl2) > 0.5 * max(xr - xl, xr2 - xl2)):
-                cand.append((ya, yb2, min(xl, xl2), max(xl, xl2), max(xr, xr2), 2))
+                cand.append((ya, yb2, min(xl, xl2), max(xl, xl2), max(xr, xr2), 2 if strong and strong2 else 1.5))
+        if not strong: continue
         for h in (31, -31):                         # un borde + los dos verticales
             y0, y1 = (ya, yb + h) if h > 0 else (ya + h, yb)
             if y0 < 0 or y1 > H: continue
@@ -214,23 +241,58 @@ def tracks(fr):
     # una entrada que se pierde un rato (pantalla roja al morir, destello, todas subiendo de golpe cuando vence la de
     # arriba) y vuelve a aparecer es la misma: se une con la anterior si tiene el mismo texto, nunca está más abajo y
     # las dos no se ven a la vez en un mismo cuadro
-    out = []
-    for t in done:
-        prev = None
+    def y_at(o, i):
+        """Altura de la entrada o en el cuadro i (o en el último cuadro en que se la vio antes de i)."""
+        ys = [fr['boxes'][j][k][0] for j, k in o['keys'] if j <= i]
+        return ys[-1] if ys else fr['boxes'][o['keys'][0][0]][o['keys'][0][1]][0]
+
+    def merge(done):
+      out = []
+      for t in done:
+        prev = None; frag = False
         for o in out:
             # mismo ancho, o una de las dos es la misma caja con el borde izquierdo cortado (se compara alineado a la derecha)
             same_box = abs(t['xl'] - o['xl']) <= 10 and abs(t['w'] - o['w']) <= 12
             cut = abs((t['xl'] + t['w']) - (o['xl'] + o['w'])) <= 10 and min(t['w'], o['w']) >= 60
-            if -0.5 * fps <= t['first'] - o['last'] <= 8 * fps and (same_box or cut) and t['y00'] <= o['y0'] + 8 \
+            if -0.5 * fps <= t['first'] - o['last'] <= 8 * fps and (same_box or cut) and t['y00'] <= y_at(o, t['first']) + 8 \
                     and len(t['frames'] & o['frames']) <= 2 and _same_text(t['sig'], o['sig']):
-                prev = o
+                prev, frag = o, False
+            # dos seguimientos que se alternan cuadro a cuadro a la misma altura (la caja se lee a veces más alta o con
+            # el borde izquierdo en otro lado) son la misma entrada, aunque el texto medio salga distinto
+            elif len(t['frames'] & o['frames']) <= 2 and abs(t['y00'] - y_at(o, t['first'])) <= 8 \
+                    and abs((t['xl'] + t['w']) - (o['xl'] + o['w'])) <= 10 \
+                    and (min(t['last'], o['last']) - t['first'] > 0.3 * fps or (same_box and t['first'] - o['last'] <= 0.25 * fps)):
+                prev, frag = o, False
+            # un pedazo corto (la entrada apareciendo con un flash, el borde a medio dibujar) seguido enseguida por una
+            # caja con el mismo borde derecho, que no está más abajo: es la misma entrada que terminó de aparecer
+            elif o['last'] - o['first'] < 1.0 * fps and 0 <= t['first'] - o['last'] <= 1.5 * fps and len(t['frames'] & o['frames']) <= 2 \
+                    and abs((t['xl'] + t['w']) - (o['xl'] + o['w'])) <= 10 and abs(t['xl'] - o['xl']) <= 16 and abs(t['w'] - o['w']) <= 22 \
+                    and t['y00'] <= y_at(o, t['first']) + 8:
+                prev, frag = o, True
         if prev is not None:
-            prev.update(last=max(prev['last'], t['last']), n=prev['n'] + t['n'], y0=t['y0']); prev['keys'] += t['keys']
-            prev['frames'] |= t['frames']
-            if t['w'] > prev['w'] + 12: prev.update(sig=t['sig'], w=t['w'], xl=t['xl'])     # la versión completa
+            prev.update(last=max(prev['last'], t['last']), n=prev['n'] + t['n'])
+            prev['keys'] = sorted(prev['keys'] + t['keys']); prev['frames'] |= t['frames']
+            prev['y0'] = fr['boxes'][prev['keys'][-1][0]][prev['keys'][-1][1]][0]
+            if t['w'] > prev['w'] + 12 or (frag and t['sig'] is not None):
+                prev.update(sig=t['sig'], w=t['w'], xl=t['xl'])     # la versión completa manda (o la que terminó de aparecer)
         else:
             out.append(t)
-    for t in out: t['start'] = t['first']
+      return out
+
+    # varias pasadas: un pedazo que se une tarde a una entrada puede hacer que otro pedazo recién ahí coincida
+    out = done
+    for _ in range(4):
+        n = len(out); out = merge(out)
+        if len(out) == n: break
+    # una entrada nueva siempre aparece ABAJO de todas las que ya están: si al nacer hay otra caja roja más abajo,
+    # no es una kill nueva sino una que ya estaba y se volvió a leer (p. ej. cuando vence la de arriba y todas suben)
+    # (salvo que la de abajo también acabe de aparecer: un collateral pone dos entradas casi en el mismo cuadro)
+    owner = {key: t for t in out for key in t['keys']}
+    for t in out:
+        t['start'] = t['first']
+        i0, k0 = t['keys'][0]; y0 = fr['boxes'][i0][k0][0]
+        t['below'] = any(fr['boxes'][i0][k][0] > y0 + 12 and (owner.get((i0, k)) is None or i0 - owner[(i0, k)]['first'] > 0.3 * fps)
+                         for k in _clean(fr['boxes'][i0]) if k != k0)
     return out
 
 
@@ -291,18 +353,33 @@ def _sim(a, b):
     return _find(pad, small)[0]
 
 
+def _names_before(sig, x):
+    """¿Hay otro nombre (texto) antes de la columna x? Los íconos que CS2 pone antes del atacante (cegado por un
+    flash, la bomba, el rango) no cuentan: son más altos que una línea de texto o muy angostos. Si hay un nombre
+    antes, el jugador no es el atacante: está después de un "+" (asistencia) o es la víctima."""
+    m = _ink(sig); col = m.sum(0) >= 2
+    xs = np.flatnonzero(col[:max(0, x - 2)])
+    if not len(xs): return False
+    cut = np.flatnonzero(np.diff(xs) > 3)
+    for a, b in zip(np.r_[xs[0], xs[cut + 1]], np.r_[xs[cut], xs[-1]]):
+        ys = np.flatnonzero(m[:, a:b + 1].any(1))
+        h = ys[-1] - ys[0] + 1 if len(ys) else 0
+        if b - a + 1 >= 22 and h <= 0.6 * sig.shape[0]: return True
+    return False
+
+
 def _where(sig, tpls):
-    """Parecido del nombre del jugador pegado a la izquierda (mató), a la derecha (murió) o en el medio (asistencia)."""
+    """Parecido del nombre del jugador como atacante (el primer nombre: mató), al final (víctima: murió) o después de
+    otro nombre (asistencia: "Compañero + jugador"). "Jugador + Compañero → X" es kill: el atacante va primero."""
     sp = _span(sig) if sig is not None else None
     sl = sr = sm = 0.0
     if sp is None: return sl, sr, sm
-    ink = _ink(sig).sum(0) >= 2
     for tp in tpls:
         s, x = _find(sig, tp)
         if x < 0: continue
-        if x - sp[0] <= 6: sl = max(sl, s)
-        elif sp[1] - (x + tp.shape[1]) <= 6: sr = max(sr, s)
-        elif not ink[max(0, x - 4):max(0, x - 1)].any(): sm = max(sm, s)     # separado de lo anterior ("X + jugador")
+        if sp[1] - (x + tp.shape[1]) <= 10: sr = max(sr, s)
+        elif not _names_before(sig, x): sl = max(sl, s)
+        else: sm = max(sm, s)
     return sl, sr, sm
 
 
@@ -325,10 +402,21 @@ def _live(fr):
     return [t for t in tracks(fr) if t['first'] > 2 and (t['last'] - t['first'] + 1) / fr['fps'] >= MIN_LIFE]
 
 
+def _unique(trs):
+    """Una sola vez cada entrada: sin las que se volvieron a leer (apareció otra caja debajo antes) ni las repetidas."""
+    out = []
+    for t in sorted(trs, key=lambda t: t['start']):
+        if t.get('below') or t['sig'] is None: continue
+        if any(t['start'] - o['start'] < 20 * 60 and _same_text(t['sig'], o['sig'], vict=0.85) for o in out): continue
+        out.append(t)
+    return out
+
+
 def clip_name(trs):
     """El jugador de la play: todas las entradas con borde rojo lo nombran (como atacante, víctima o asistencia), así
-    que es el nombre que aparece en más entradas. Candidatos: el primer y el último nombre de cada entrada.
+    que es el nombre que aparece en más entradas distintas. Candidatos: el primer y el último nombre de cada entrada.
     Devuelve (imagen del nombre, en cuántas entradas aparece) o (None, 0) si ningún nombre se repite."""
+    trs = _unique(trs)
     cands = []
     for t in trs:
         for side in ('L', 'R'):
@@ -353,10 +441,11 @@ def player_names(frs):
 # ---------------------------------------------------------------- etapa 2 completa: eventos con confianza
 
 def detect(fr, names=None):
-    """Kills propias del clip: [dict(t, conf, why, life, kind)] por tiempo. kind 'kill' = el nombre del jugador a la
-    izquierda de una entrada nueva; 'dudosa' = entrada nueva en la que no se pudo leer quién mató. Muertes y
-    asistencias no son kills: quedan en fr['otros']. El jugador se deduce de la propia play (clip_name); si en el
-    clip no se repite ningún nombre, se prueba con `names` (player_names del resto del proyecto)."""
+    """Kills propias del clip: [dict(t, conf, why, life, kind)] por tiempo. kind 'kill' = el jugador es el atacante
+    (primer nombre) de una entrada nueva; 'dudosa' = entrada nueva en la que no se pudo leer quién mató. Muertes,
+    asistencias, entradas repetidas y todo lo posterior a la muerte del jugador no son kills: quedan en fr['otros'].
+    El jugador se deduce de la propia play (clip_name); si en el clip no se repite ningún nombre, se prueba con
+    `names` (player_names del resto del proyecto)."""
     fps = fr['fps']
     trs = _live(fr)
     tp, cnt = clip_name(trs); src = 'clip'
@@ -366,37 +455,45 @@ def detect(fr, names=None):
         if s_ >= 0.8: tp, src = names[k], 'proyecto'
     fr['jugador'] = dict(src=src if tp is not None else None, veces=cnt)
     ev, otros, victims = [], [], []
+    dead = None                                  # cuándo murió el jugador (después no puede haber kills propias)
     for t in sorted(trs, key=lambda t: t['start']):
+        tt = round(t['start'] / fps, 3)
+        if dead is not None and t['start'] > dead + 0.1 * fps:
+            otros.append(dict(t=tt, kind='después de morir', why=f'el jugador murió en {dead / fps:.2f}s')); continue
+        if t.get('below'):
+            otros.append(dict(t=tt, kind='repetida', why='ya había otra entrada debajo: es una que se volvió a leer')); continue
         # la misma entrada (mismo atacante, arma y víctima) que ya se contó hace menos de 20 s: se perdió y volvió a
         # aparecer, no es una kill nueva (un enemigo muere una sola vez por ronda)
-        dup = [tv for tv, sg in victims if t['start'] - tv < 20 * fps and _same_text(t['sig'], sg, vict=0.85)]
+        dup = [tv for tv, sg, _ in victims if t['start'] - tv < 20 * fps and _same_text(t['sig'], sg, vict=0.85)]
         if dup:
-            otros.append(dict(t=round(t['start'] / fps, 3), kind='repetida', why=f'misma víctima que en {dup[0] / fps:.2f}s'))
-            continue
+            otros.append(dict(t=tt, kind='repetida', why=f'misma víctima que en {dup[0] / fps:.2f}s')); continue
         life = (t['last'] - t['start'] + 1) / fps
         exp = min(4.5, (fr['n'] - t['start']) / fps)
         k_life = 1.0 if life >= 0.4 * exp else 0.7
         sl, sr, sm = _where(t['sig'], [tp]) if tp is not None else (0.0, 0.0, 0.0)
-        tt = round(t['start'] / fps, 3)
         if sl >= NAME_OK and sl >= sr:
             conf = (0.75 + 0.25 * min(1.0, (sl - NAME_OK) / (1 - NAME_OK))) * k_life * (1.0 if src == 'clip' else 0.9)
-            why = f'jugador a la izquierda ({sl:.2f})' + ('' if src == 'clip' else ', nombre de otro clip')                 + ('' if k_life == 1 else f', dura poco ({life:.1f}s)')
+            why = f'jugador a la izquierda ({sl:.2f})' + ('' if src == 'clip' else ', nombre de otro clip') \
+                + ('' if k_life == 1 else f', dura poco ({life:.1f}s)')
             ev.append(dict(t=tt, conf=round(conf, 2), why=why, life=round(life, 2), kind='kill'))
-            victims.append((t['start'], t['sig']))
-        elif sr >= NAME_OK:
+            victims.append((t['start'], t['sig'], t['y00']))
+        elif sr >= DEATH_OK and sl < 0.5:
             otros.append(dict(t=tt, kind='muerte', why=f'jugador a la derecha ({sr:.2f})'))
+            # después de morir no hay kills propias; solo con una entrada de muerte entera (no un pedazo mal leído)
+            if sr >= NAME_OK and life >= min(1.5, 0.5 * exp): dead = t['start']
         elif sm >= 0.8:
-            otros.append(dict(t=tt, kind='asistencia', why=f'jugador en el medio ({sm:.2f})'))
+            otros.append(dict(t=tt, kind='asistencia', why=f'jugador después de otro nombre ({sm:.2f})'))
         else:
             why = 'no se leyó el nombre del jugador' if tp is not None else 'una sola entrada: no se sabe cuál es el jugador'
             ev.append(dict(t=tt, conf=round(0.45 * k_life, 2), why=why, life=round(life, 2), kind='dudosa'))
-            victims.append((t['start'], t['sig']))
-    # dos eventos casi juntos de la misma entrada (caja partida en un cuadro) -> uno
-    ev.sort(key=lambda e: e['t']); out = []
-    for e in ev:
-        if out and e['t'] - out[-1]['t'] < 0.1:
+            victims.append((t['start'], t['sig'], t['y00']))
+    # dos eventos casi juntos con el mismo texto o en la misma fila son la misma entrada (caja partida en un cuadro) -> uno. Con texto
+    # distinto, en otra fila y las dos leídas como kill son dos kills (un collateral pone dos entradas casi juntas)
+    out, sigs = [], []
+    for e, (_, sg, yy) in sorted(zip(ev, victims), key=lambda p: p[0]['t']):
+        if out and e['t'] - out[-1]['t'] < 0.1 and ('dudosa' in (e['kind'], out[-1]['kind']) or abs(yy - sigs[-1][1]) <= 8 or _same_text(sg, sigs[-1][0])):
             if e['conf'] > out[-1]['conf']: out[-1] = e
             continue
-        out.append(e)
+        out.append(e); sigs.append((sg, yy))
     fr['otros'] = otros
     return out
