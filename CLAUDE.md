@@ -29,17 +29,17 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    los avisos del KILLFEED revisados (kills que el killfeed muestra y no están en `kf.json`).
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
    Si el usuario quiere ver el video entero antes del final: `--draft` (borrador 960x540 a 30 fps en `projects/<nombre>/borrador.mp4`).
-7. Render final (en segundo plano): `python engine/build.py projects/<nombre>` → `output/<nombre>.mp4`.
+7. Render final (en segundo plano): `python engine/build.py projects/<nombre>` → `output/<nombre>/video/<nombre>.mp4`.
    Al terminar corre solo `check_render.py` y lo guarda en `projects/<nombre>/check_render.txt`: leelo.
 8. Paquete completo (skill `cs2-pack`): `python engine/short.py projects/<nombre> --count auto --dur 35`, miniatura y textos
-   con `yt-publish`, `publish/redes.md`, y `python engine/pack.py projects/<nombre>` → `output/<nombre>_pack/`.
+   con `yt-publish`, `publish/redes.md`, y `python engine/pack.py projects/<nombre>` → completa `output/<nombre>/info/`.
 9. Revisiones: `python engine/locate.py projects/<nombre> 1:23,2:05` traduce los minutos que marca el usuario a clip,
    kill y transición, con tiras de cuadros en `projects/<nombre>/insp/`.
 
 ## Skills del proyecto
 | Skill | Cuándo |
 |---|---|
-| `cs2-pack` | **Por defecto** cuando llegan clips + canción, `/cs2-pack`, "hacé un edit", "hacé todo": edit + 2-4 shorts + miniatura + textos de YouTube y redes, en `output/<nombre>_pack/`. Encadena las demás skills. |
+| `cs2-pack` | **Por defecto** cuando llegan clips + canción, `/cs2-pack`, "hacé un edit", "hacé todo": edit + 2-4 shorts + miniatura + textos de YouTube y redes, en `output/<nombre>/` (`video/`, `shorts/`, `info/`). Encadena las demás skills. |
 | `cs2-edit` | Las reglas del edit (siempre se cargan, también dentro de `cs2-pack`). Sola, solo si el usuario pide **únicamente** el video largo ("solo el edit", `/cs2-edit`) o para corregir un edit ya hecho. |
 | `clip-catalog` | Elegir plays, ver qué clips ya se usaron o están verificados, cargar clips nuevos. Lo usa `cs2-edit`. |
 | `cs2-short` | Short vertical 9:16 (TikTok, Reels, Shorts) a partir de un edit terminado. |
@@ -99,4 +99,6 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 - Las preferencias del usuario están en el skill (reglas de corte, efectos, texto, audio). No las cambies sin que lo pida.
 - No poner letras de canciones en pantalla.
 - Verificar siempre el resultado: duración, 60 fps, y mirar previews de los momentos cambiados.
-- Los videos terminados quedan en `output/`. Los clips originales del usuario no se tocan.
+- **Una carpeta por proyecto en `output/<nombre>/`** (pedido del 20/11/2026): `video/` (el edit largo y sus variantes), `shorts/` y
+  `info/` (miniaturas, `youtube.md`, `redes.md`, `info.json`, `check_render.txt`, `LEEME.md`). Nada suelto en `output/`.
+  Las rutas salen de `engine/paths.py`. Los clips originales del usuario no se tocan.

@@ -8,7 +8,7 @@ description: "Prepara todo para subir un edit de CS2 a YouTube: miniatura 1280x7
 Todo queda en `projects/<nombre>/publish/`. **No se sube ni se publica nada**: el usuario sube el video desde YouTube Studio. Los scripts están en `engine/publish.py`.
 
 ## Pasos
-1. Confirmá que existe `output/<nombre>.mp4` y que es la versión final (sin correcciones pendientes).
+1. Confirmá que existe `output/<nombre>/video/<nombre>.mp4` y que es la versión final (sin correcciones pendientes).
 2. **Datos:** `python engine/publish.py projects/<nombre> info` → `publish/info.json` con duración, plays con título, cantidad de kills, canción (tags del mp3) y **capítulos ya validados** (primero en 0:00, al menos 3, cada uno de 10 s o más; si no, YouTube los ignora).
 3. **Cuadros y caras:** `python engine/publish.py projects/<nombre> frames` → un cuadro por kill de las plays con título y por cada drop (`thumbs_sheet.jpg`, números `cand`), y la cara del streamer recortada de su cámara en el cierre y ~0.8 s después de cada kill (`reacciones_sheet.jpg`, números `reac`). Mirá las dos hojas y elegí:
    - **cand:** el enemigo se ve claro y cerca (mejor si está cayendo o con el marcador de headshot), el arma visible; sin quemar por un efecto, sin transición a medias, sin los rectángulos blancos u overlays del stream en el centro; de la play más fuerte (ACE, clutch, 4K).

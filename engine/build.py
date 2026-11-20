@@ -1,6 +1,6 @@
 """Pipeline completo de un proyecto, usando todo el hardware local.
 
-    python engine/build.py projects/<nombre>                 -> video final en output/
+    python engine/build.py projects/<nombre>                 -> video final en output/<nombre>/video/<nombre>.mp4
     python engine/build.py projects/<nombre> --preview 12.5,40,113   -> solo JPG en projects/<nombre>/previews/
     python engine/build.py projects/<nombre> --only 100-130   -> re-renderiza solo ese tramo (segundos) y reusa el resto
     python engine/build.py projects/<nombre> --draft          -> borrador 960x540 a 30 fps en projects/<nombre>/borrador.mp4
@@ -19,6 +19,7 @@ ENGINE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(ENGINE)
 sys.path.insert(0, ENGINE)
 from encoders import video_encoder_args, pick
+import paths
 
 PY = sys.executable
 CHUNK_SEC = 2.0          # tamaño de cada pedazo de render (en segundos de video)
@@ -317,8 +318,7 @@ def main():
     if draft:
         out = os.path.join(project, args.name or 'borrador.mp4')
     else:
-        os.makedirs(os.path.join(ROOT, 'output'), exist_ok=True)
-        out = os.path.join(ROOT, 'output', args.name or (os.path.basename(project) + '.mp4'))
+        out = paths.video_path(os.path.basename(project), args.name)      # output/<nombre>/video/
     # los pedazos ya tienen la calidad final: se unen sin recodificar el video (solo se codifica el audio)
     run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-i', os.path.join(project, 'work_audio.wav'),
          '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k' if draft else '320k',

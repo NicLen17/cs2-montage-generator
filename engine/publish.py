@@ -358,7 +358,8 @@ def main():
     ap.add_argument('--logo', action='store_true', help='logo del canal en la esquina de arriba')
     a = ap.parse_args()
     project = os.path.abspath(a.project); p = load_plan(project)
-    video = a.video or os.path.join(ROOT, 'output', os.path.basename(project) + '.mp4')
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import paths
+    video = a.video or paths.find_video(os.path.basename(project))
     if a.cmd in ('frames', 'info') and not os.path.exists(video): raise SystemExit(f'No existe {video}: renderizá primero el edit.')
     {'frames': lambda: cmd_frames(project, p, video), 'thumb': lambda: cmd_thumb(project, p, a), 'info': lambda: cmd_info(project, p, video)}[a.cmd]()
 

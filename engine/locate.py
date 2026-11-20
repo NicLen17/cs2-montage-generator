@@ -1,7 +1,7 @@
 """Traduce minutos del video terminado (los que marca el usuario) a lo que hay en el plan, y arma tiras de cuadros.
 
     python engine/locate.py projects/<nombre> 1:23,2:05.5,47        -> reporte + tiras en projects/<nombre>/insp/
-    opciones: --span 1.0 (segundos antes y después)  --step 0.1 (cada cuánto un cuadro)  --video output/x.mp4  --no-img
+    opciones: --span 1.0 (segundos antes y después)  --step 0.1 (cada cuánto un cuadro)  --video output/<nombre>/video/x.mp4  --no-img
 
 Para cada tiempo dice: tramo del plan, clip (y archivo original), tiempo dentro del clip, play (ACT1/ACT2 e índice),
 kill más cercana (clip, índice, distancia), transición más cercana, título visible y tiempo de canción.
@@ -92,7 +92,8 @@ def main():
     a = ap.parse_args()
     project = os.path.abspath(a.project); name = os.path.basename(project)
     plan = load_plan(project); cmap = clip_map(project)
-    video = a.video or os.path.join(ROOT, 'output', name + '.mp4')
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import paths
+    video = a.video or paths.find_video(name)
     kid = list(getattr(plan, 'kill_id', [None] * len(plan.kills)))
     os.makedirs(os.path.join(project, 'insp'), exist_ok=True)
 

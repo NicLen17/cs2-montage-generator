@@ -1,6 +1,6 @@
 """Revisión técnica del video renderizado (tirones, cuadros repetidos, volumen). Correr después de cada render final.
 
-    python engine/check_render.py projects/<nombre> [output/<archivo>.mp4]
+    python engine/check_render.py projects/<nombre> [output/<nombre>/video/<archivo>.mp4]
 
 Reporta:
   - cuadros repetidos (imagen igual a la anterior mientras el resto se mueve) y en qué clip caen;
@@ -34,7 +34,8 @@ def main():
     try: sys.stdout.reconfigure(encoding="utf-8")
     except Exception: pass
     project = os.path.abspath(sys.argv[1])
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.dirname(project)), 'output', os.path.basename(project) + '.mp4')
+    sys.path.insert(0, ENGINE); import paths
+    out = sys.argv[2] if len(sys.argv) > 2 else paths.find_video(os.path.basename(project))
     p = load_plan(project)
     d = frame_diffs(out)
     cuts = [s['o0'] for s in p.segments]

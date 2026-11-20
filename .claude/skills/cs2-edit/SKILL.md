@@ -5,7 +5,7 @@ description: "Reglas y flujo del edit largo del proyecto wako-edits: arma, corri
 
 # CS2 Edit — montaje de plays estilo WAKO TV
 
-Entrada: clips .mp4 de Twitch (1080p60, cámara del streamer arriba a la izquierda) y un archivo de audio con la canción. Salida: un MP4 1080p a 60 fps, de 2 a 3:30 según el tema, guardado en `output/`.
+Entrada: clips .mp4 de Twitch (1080p60, cámara del streamer arriba a la izquierda) y un archivo de audio con la canción. Salida: un MP4 1080p a 60 fps, de 2 a 3:30 según el tema, guardado en `output/<nombre>/video/`.
 Este skill corre **en la PC del usuario** con Claude Code, dentro del proyecto `wako-edits`. Cada video es una carpeta `projects/<nombre>/` (clips copiados como `clips/c1.mp4…`, `song.mp3`). Nunca muevas ni modifiques los originales del usuario. Los scripts están en `engine/` (ver CLAUDE.md).
 Esta es la versión del proyecto y la única que se actualiza. La de la cuenta (`anthropic-skills:cs2-edit`) quedó congelada: no la uses.
 

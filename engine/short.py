@@ -4,15 +4,15 @@
     python engine/short.py projects/<nombre> --list                -> solo muestra los tramos candidatos con su puntaje
     python engine/short.py projects/<nombre> --start 1:52 --dur 40 -> tramo fijo
     python engine/short.py projects/<nombre> --count auto --dur 35 -> varios shorts que no se pisan (2 a 4): <nombre>_short1.mp4, ...
-    opciones: --dur 45  --layout fit|cam  --video output/x.mp4  --name x_short.mp4  --no-text
+    opciones: --dur 45  --layout fit|cam  --video output/<nombre>/video/x.mp4  --name x_short.mp4  --no-text
 
-Toma la imagen y el audio del video final (output/<nombre>.mp4), así que conserva efectos, sincronía y mezcla.
+Toma la imagen y el audio del video final (output/<nombre>/video/<nombre>.mp4), así que conserva efectos, sincronía y mezcla.
   fit (por defecto): fondo desenfocado + el cuadro completo a 1080 de ancho en el centro (se ve todo, killfeed incluido),
                      "WAKO TV" y el tema arriba, twitch.tv/el_wako abajo.
   cam: cámara del streamer arriba (zoom 2x, el máximo permitido) y el centro del gameplay abajo a tamaño real.
        Solo sirve si en todo el tramo la cámara está en la posición por defecto (25,18)-(490,278).
 El tramo empieza después de una transición y termina antes de la siguiente; nunca corta una play por la mitad.
-Salida: output/<nombre>_short.mp4 (o _short1, _short2... con --count) a 1080x1920 y 60 fps, una hoja por short en
+Salida: output/<nombre>/shorts/<nombre>_short.mp4 (o _short1, _short2... con --count) a 1080x1920 y 60 fps, una hoja por short en
 projects/<nombre>/ y projects/<nombre>/shorts.json con tramos, kills y títulos de cada uno.
 """
 import os, sys, json, argparse, subprocess, importlib.util, io, contextlib
@@ -112,7 +112,8 @@ def main():
     ap.add_argument('--count', default='1', help="cantidad de shorts sin pisarse, o 'auto' (2 a 4, los buenos)")
     a = ap.parse_args()
     project = os.path.abspath(a.project); name = os.path.basename(project); p = load_plan(project)
-    video = a.video or os.path.join(ROOT, 'output', name + '.mp4')
+    import paths
+    video = a.video or paths.find_video(name)
     if not os.path.exists(video): raise SystemExit(f'No existe {video}: renderizá primero el edit (engine/build.py).')
 
     if a.start:
@@ -131,7 +132,7 @@ def main():
     jobs = []
     for i, c in enumerate(picks, 1):          # short1 = el de mejor puntaje (el primero que conviene publicar)
         suf = f'_short{i}' if multi else '_short'
-        out = os.path.join(ROOT, 'output', a.name if (a.name and not multi) else f'{name}{suf}.mp4')
+        out = paths.short_path(name, a.name if (a.name and not multi) else f'{name}{suf}.mp4')      # output/<nombre>/shorts/
         sheet = os.path.join(project, f'short{i if multi else ""}_sheet.jpg')
         jobs.append((c, out, sheet))
     def run(job):

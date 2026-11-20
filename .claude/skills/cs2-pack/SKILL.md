@@ -9,11 +9,11 @@ Un solo pedido y sale todo el contenido de un video. **Es el arranque por defect
 
 | Paso | Skill que manda | Resultado |
 |---|---|---|
-| 1. Edit largo | `cs2-edit` (y `clip-catalog`) | `output/<nombre>.mp4` 1920×1080 |
-| 2. Shorts | `cs2-short` | `output/<nombre>_short1.mp4`, `_short2`… 1080×1920 |
+| 1. Edit largo | `cs2-edit` (y `clip-catalog`) | `output/<nombre>/video/<nombre>.mp4` 1920×1080 |
+| 2. Shorts | `cs2-short` | `output/<nombre>/shorts/<nombre>_short1.mp4`, `_short2`… 1080×1920 |
 | 3. Miniatura y textos de YouTube | `yt-publish` | `publish/thumbnail.jpg`, `publish/youtube.md` |
 | 4. Textos de redes | esta skill (§4) | `publish/redes.md` |
-| 5. Entrega | esta skill (§5) | `output/<nombre>_pack/` con todo y un `LEEME.md` |
+| 5. Entrega | esta skill (§5) | `output/<nombre>/info/` con miniaturas, textos y un `LEEME.md` |
 
 Antes de empezar, cargá `cs2-edit` (es la que tiene las reglas del canal) y `anthropic-skills:montage-editing-craft`, igual que en un edit normal. Leé `cs2-short` y `yt-publish` cuando llegues a esos pasos.
 
@@ -25,7 +25,7 @@ Antes de empezar, cargá `cs2-edit` (es la que tiene las reglas del canal) y `an
 - Los comandos largos (render, shorts) van **en segundo plano**; mientras corren, avanzá con lo que no depende de ellos.
 
 ## 1. Edit largo
-Seguí `cs2-edit` de punta a punta hasta tener `output/<nombre>.mp4` y `projects/<nombre>/check_render.txt` limpio (si el pico pasa de -1 dBFS, aplicá la bajada de audio sin re-renderizar, como dice la skill). Guardá lo verificado en el catálogo (`catalog.py import`).
+Seguí `cs2-edit` de punta a punta hasta tener `output/<nombre>/video/<nombre>.mp4` y `projects/<nombre>/check_render.txt` limpio (si el pico pasa de -1 dBFS, aplicá la bajada de audio sin re-renderizar, como dice la skill). Guardá lo verificado en el catálogo (`catalog.py import`).
 
 ## 2. Shorts (en segundo plano)
 `python engine/short.py projects/<nombre> --count auto --dur 35` (en segundo plano).
@@ -51,12 +51,12 @@ Un bloque por short (usá `shorts.json`: tramo, kills y títulos de cada uno):
 - Orden de publicación: del short con mejor puntaje al más flojo (el 1 es el mejor de `--count auto`).
 
 ## 5. Entrega
-`python engine/pack.py projects/<nombre>` arma `output/<nombre>_pack/`:
-- `01_youtube_<nombre>.mp4`, `02_short1_<nombre>.mp4`, … (enlazados, no ocupan el doble), `thumbnail.jpg` y las otras opciones de miniatura, `youtube.md`, `redes.md`, y un `LEEME.md` con qué subir a cada plataforma y en qué orden.
+`python engine/pack.py projects/<nombre>` completa la carpeta del proyecto, `output/<nombre>/` (una por proyecto, nada suelto en `output/`):
+- `video/<nombre>.mp4` (lo deja `build.py`), `shorts/<nombre>_short1.mp4`, … (los deja `short.py`) e `info/` con `thumbnail.jpg` y las otras opciones de miniatura, `youtube.md`, `redes.md`, `info.json`, `check_render.txt` y un `LEEME.md` con qué subir a cada plataforma y en qué orden.
 - Si dice "Falta: …", completá ese paso y volvé a correrlo.
 
 ## Respuesta final
-Una tabla corta con lo que quedó en `output/<nombre>_pack/` (video largo con su duración, cada short con su tramo y la play que muestra, la miniatura elegida y por qué). Después, en pocas líneas, lo que pide el resumen de `cs2-edit` (plays, uso de la canción, qué se dejó afuera), lo que quedó sin confirmar y el aviso de Content ID. Mostrá la miniatura y `thumbs_compare.jpg` con sus rutas.
+Una tabla corta con lo que quedó en `output/<nombre>/` (video largo con su duración, cada short con su tramo y la play que muestra, la miniatura elegida y por qué). Después, en pocas líneas, lo que pide el resumen de `cs2-edit` (plays, uso de la canción, qué se dejó afuera), lo que quedó sin confirmar y el aviso de Content ID. Mostrá la miniatura y `thumbs_compare.jpg` con sus rutas.
 
 ## Correcciones después de la entrega
 - Si el usuario corrige el **edit largo**: corregí con `cs2-edit` (solo se re-renderiza lo que cambió) y después **volvé a correr los pasos 2, 3 y 5**: los shorts y la miniatura salen del video final, así que si no se rehacen quedan desactualizados.

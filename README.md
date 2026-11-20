@@ -59,7 +59,7 @@ git clone https://github.com/NicLen17/wako-edits.git
 /cs2-pack
 ```
 
-Claude solo te pregunta lo que no puede detectar (un arma dudosa, algún golpe de la canción) y al final te deja todo en `output/<nombre>_pack/`:
+Claude solo te pregunta lo que no puede detectar (un arma dudosa, algún golpe de la canción) y al final te deja todo en `output/<nombre>/` (`video/`, `shorts/` e `info/`):
 
 | Sale | Qué es |
 |---|---|
