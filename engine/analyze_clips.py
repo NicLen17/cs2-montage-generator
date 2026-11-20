@@ -4,48 +4,32 @@
     python engine/analyze_clips.py projects/<nombre> --shots    -> solo recalcula disparos desde kf.json
 
 Hace (en paralelo, un proceso por clip):
-  1. cnt<N>.npy: cantidad de líneas rojas del killfeed por cuadro (entradas propias, borde rojo).
-  2. kf_auto.json: momentos en que aparece una entrada propia nueva (candidatos a kill).
-  3. sheets/ctx_*.jpg: hojas de contexto (miniaturas) y sheets/kf_*.jpg: recortes del killfeed en cada evento.
+  1. Lee el killfeed cuadro por cuadro (engine/killfeed.py): cada entrada con borde rojo se sigue en el tiempo y se
+     decide si es kill (el jugador a la izquierda), muerte (a la derecha) o asistencia (en el medio). El jugador se
+     deduce de cada play: es el nombre que se repite en sus entradas rojas (no hay nicks fijos).
+     cnt<N>.npy: cantidad de entradas con borde rojo por cuadro.
+  2. kf_auto.json: {clip: [tiempos]} de las kills encontradas (seguras y dudosas). kf_conf.json: lo mismo con el
+     puntaje de confianza (0-1) y el motivo, más las muertes y asistencias descartadas.
+  3. sheets/kf_dudosos.jpg: SOLO lo que hay que mirar a ojo (kills dudosas y clips sin killfeed legible).
+     sheets/kf_resumen.txt: resumen por clip. sheets/kf_*.jpg: todas las kills (verde = segura, rojo = dudosa).
+     sheets/ctx_*.jpg: hojas de contexto (miniaturas a 1 fps).
   4. shots.json: el instante exacto del disparo de cada kill, a partir del audio del clip.
-REVISÁ las hojas a ojo y corregí kf.json (lista final de kills por clip) antes de planificar.
-Contá las entradas propias al final de la ronda: si faltan kills en la lista, buscalas."""
-import os, sys, json, subprocess
+Revisá a ojo solo lo dudoso y corregí kf.json (lista final de kills por clip) antes de planificar."""
+import os, sys, json, subprocess, unicodedata
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np, cv2
-from scipy.ndimage import median_filter
 from scipy.signal import butter, sosfiltfilt
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import killfeed as K
 
 clips = []   # se llena en __main__ (en Windows los procesos hijos heredan la carpeta del proyecto como cwd)
 
 
-def kf_count(c):
-    w, h = 670, 394
-    p = subprocess.Popen(['ffmpeg', '-v', 'error', '-i', f'clips/c{c}.mp4', '-vf', 'crop=670:394:1250:24', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-'],
-                         stdout=subprocess.PIPE)
-    cnt = []
-    while True:
-        b = p.stdout.read(w * h * 3)
-        if len(b) < w * h * 3: break
-        reg = np.frombuffer(b, np.uint8).reshape(h, w, 3).astype(np.int16)
-        m = (reg[..., 2] > 170) & (reg[..., 2] - np.maximum(reg[..., 1], reg[..., 0]) > 60)   # borde rojo (a veces rosado al aparecer)
-        # bordes horizontales (2 px) de cada entrada propia; una entrada mide ~30 px de alto (borde arriba + abajo)
-        rows = np.where(m.sum(1) > 110)[0]; groups = []; last = -10
-        for y in rows:
-            if y - last > 1: groups.append([y, y])
-            else: groups[-1][1] = y
-            last = y
-        ctr = [(a + b) / 2 for a, b in groups]; g = 0; i = 0
-        while i < len(ctr) - 1:
-            if 25 <= ctr[i + 1] - ctr[i] <= 35: g += 1; i += 2   # par borde superior / inferior = 1 entrada
-            else: i += 1
-        cnt.append(g)
-    cnt = np.array(cnt); np.save(f'cnt{c}.npy', cnt)
-    e = median_filter(cnt, 9).astype(int); ev = []
-    for i in range(1, len(e) - 18):
-        if e[i] >= e[i - 1] + 1 and e[i:i + 18].min() > e[i - 1]:
-            if not ev or i / 60 - ev[-1] > 0.15: ev.append(round(i / 60, 3))
-    return c, ev, int(median_filter(cnt, 31).max())
+def kf_scan(c):
+    """Etapa lenta del killfeed (un proceso por clip): las cajas rojas de cada cuadro."""
+    fr = K.scan(f'clips/c{c}.mp4')
+    np.save(f'cnt{c}.npy', np.array([len(K._clean(b)) for b in fr['boxes']]))
+    return c, fr
 
 
 def shots_for(args):
@@ -67,18 +51,52 @@ def shots_for(args):
     return c, res
 
 
-def sheets(kf):
+def _kf_tile(cap, n, t, label, color, note=None):
+    cap.set(1, max(0, min(int((t + 0.5) * 60), n - 3))); ok, f = cap.read()
+    if not ok: return None
+    k = cv2.resize(f[25:265, 1300:1920], (465, 180))
+    cv2.rectangle(k, (0, 0), (464, 179), color, 3)
+    for txt, y, col in ((label, 172, color), (note, 20, (0, 255, 255))):
+        if txt:
+            txt = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode()   # cv2 no dibuja tildes
+            cv2.putText(k, txt[:46], (6, y), 0, 0.5, (0, 0, 0), 4); cv2.putText(k, txt[:46], (6, y), 0, 0.5, col, 1)
+    return k
+
+
+def _grid(rows, cols, name, per=10):
+    if not rows: return
+    while len(rows) % cols: rows.append(np.zeros_like(rows[0]))
+    R = [np.hstack(rows[i:i + cols]) for i in range(0, len(rows), cols)]
+    for j in range(0, len(R), per):
+        cv2.imwrite(f'sheets/{name}_{j // per}.jpg' if len(R) > per else f'sheets/{name}.jpg', np.vstack(R[j:j + per]))
+
+
+def sheets(conf):
+    """conf = kf_conf.json. Todas las kills (verde segura / rojo dudosa) y una hoja aparte solo con lo dudoso."""
     os.makedirs('sheets', exist_ok=True)
-    rows = []
+    for f in os.listdir('sheets'):
+        if f.startswith('kf') and f.endswith('.jpg'): os.remove(os.path.join('sheets', f))
+    rows, doubt = [], []
     for c in clips:
-        cap = cv2.VideoCapture(f'clips/c{c}.mp4'); n = int(cap.get(7)); ims = []
-        for t in kf.get(str(c), []):
-            cap.set(1, min(int((t + 0.5) * 60), n - 3)); ok, f = cap.read()
-            if not ok: continue
-            k = cv2.resize(f[25:265, 1300:1920], (465, 180)); cv2.putText(k, f'c{c} {t}', (4, 175), 0, 0.6, (0, 255, 255), 2); rows.append(k)
-    while rows and len(rows) % 5: rows.append(np.zeros_like(rows[0]))
-    R = [np.hstack(rows[i:i + 5]) for i in range(0, len(rows), 5)]
-    for j in range(0, len(R), 10): cv2.imwrite(f'sheets/kf_{j // 10}.jpg', np.vstack(R[j:j + 10]))
+        info = conf.get(str(c))
+        if not info: continue
+        cap = cv2.VideoCapture(f'clips/c{c}.mp4'); n = int(cap.get(7))
+        for e in info['kills']:
+            sure = e['conf'] >= K.DOUBT
+            label = f'c{c} {e["t"]:.2f}  ' + (f'{e["conf"]:.2f}' if sure else f'DUDOSA {e["conf"]:.2f}')
+            k = _kf_tile(cap, n, e['t'], label, (0, 200, 0) if sure else (0, 0, 255))
+            if k is None: continue
+            rows.append(k)
+            if not sure: doubt.append(_kf_tile(cap, n, e['t'], label, (0, 0, 255), e['why']))
+        if info.get('sin_killfeed'):                # cámara encima o HUD tapado: hay que mirar todo el clip
+            for t in (n / 60 * 0.3, n / 60 * 0.6):
+                k = _kf_tile(cap, n, t, f'c{c} SIN KILLFEED LEGIBLE', (0, 165, 255), 'revisar el clip entero a mano')
+                if k is not None: doubt.append(k)
+    _grid(rows, 5, 'kf')
+    _grid([d for d in doubt if d is not None], 4, 'kf_dudosos')
+
+
+def sheets_ctx():
     th = []
     for c in clips:
         cap = cv2.VideoCapture(f'clips/c{c}.mp4'); n = int(cap.get(7)); t = 0.0
@@ -91,6 +109,36 @@ def sheets(kf):
     for j in range(0, len(R), 14): cv2.imwrite(f'sheets/ctx_{j // 14}.jpg', np.vstack(R[j:j + 14]))
 
 
+def killfeed(scan):
+    """Lee el killfeed de los clips a revisar y escribe kf_auto.json, kf_conf.json y sheets/kf_resumen.txt."""
+    with ProcessPoolExecutor() as ex:
+        frs = dict(ex.map(kf_scan, scan))
+    names = K.player_names(list(frs.values()))      # el jugador, deducido de las plays donde su nombre se repite
+    conf, kf_auto, resumen = {}, {}, []
+    for c in scan:
+        fr = frs[c]; ev = K.detect(fr, names=names)
+        nobox = not ev and not fr['otros']          # ni una entrada roja nueva: killfeed tapado o fuera de lugar
+        conf[str(c)] = dict(kills=ev, otros=fr['otros'], jugador=fr['jugador']['src'], sin_killfeed=nobox)
+        kf_auto[str(c)] = [e['t'] for e in ev]
+        sure = [e['t'] for e in ev if e['conf'] >= K.DOUBT]; dud = [e['t'] for e in ev if e['conf'] < K.DOUBT]
+        line = f'c{c}: {len(sure)} kill(s) segura(s) {sure}'
+        if dud: line += f'  · {len(dud)} DUDOSA(S) {dud}'
+        for o in fr['otros']: line += f'  · {o["kind"]} {o["t"]}'
+        if nobox: line += '  · SIN KILLFEED LEGIBLE (¿cámara encima?): revisar el clip entero a mano'
+        elif fr['jugador']['src'] is None and ev: line += '  · no se pudo deducir el nombre del jugador'
+        resumen.append(line)
+    json.dump(kf_auto, open('kf_auto.json', 'w'), indent=1)
+    json.dump(conf, open('kf_conf.json', 'w', encoding='utf-8'), indent=1, ensure_ascii=False)
+    nk = sum(len(v['kills']) for v in conf.values()); nd = sum(e['conf'] < K.DOUBT for v in conf.values() for e in v['kills'])
+    nb = [c for c, v in conf.items() if v['sin_killfeed']]
+    resumen.append(f'\nTotal: {nk} kills, {nk - nd} seguras, {nd} dudosas para mirar a ojo'
+                   + (f'; clips sin killfeed legible (revisar enteros): {", ".join("c" + c for c in nb)}' if nb else ''))
+    os.makedirs('sheets', exist_ok=True)
+    open('sheets/kf_resumen.txt', 'w', encoding='utf-8').write('\n'.join(resumen) + '\n')
+    print('\n'.join(resumen))
+    return kf_auto, conf
+
+
 if __name__ == '__main__':
     try: sys.stdout.reconfigure(encoding='utf-8')
     except Exception: pass
@@ -101,18 +149,14 @@ if __name__ == '__main__':
     if verified: print(f'Verificados del catálogo (se saltean): {sorted(verified)}')
     if '--shots' not in sys.argv:
         scan = [c for c in clips if c not in verified]
-        with ProcessPoolExecutor() as ex:
-            res = list(ex.map(kf_count, scan))
-        kf_auto = {str(c): ev for c, ev, mx in res}
-        json.dump(kf_auto, open('kf_auto.json', 'w'), indent=1)
-        for c, ev, mx in res: print(f'c{c}: {len(ev)} eventos {ev}  (máx entradas propias visibles: {mx})')
+        kf_auto, conf = killfeed(scan)
         kf = json.load(open('kf.json')) if os.path.exists('kf.json') else {}
         for c, ev in kf_auto.items():
             kf.setdefault(c, ev)          # nunca pisa una lista ya corregida o traída del catálogo
         json.dump(kf, open('kf.json', 'w'), indent=1)
         clips = scan                      # las hojas de killfeed y contexto, solo de los clips a revisar
-        sheets(kf_auto)
-        print('Hojas en sheets/. Corregí kf.json (solo kills propias, sin duplicados) y corré con --shots.')
+        sheets(conf); sheets_ctx()
+        print('Hojas en sheets/: mirá kf_dudosos.jpg (solo lo dudoso). Corregí kf.json y corré con --shots.')
     kf = json.load(open('kf.json'))
     old = json.load(open('shots.json')) if os.path.exists('shots.json') else {}
     todo = [(int(c), v) for c, v in kf.items() if not (int(c) in verified and c in old)]

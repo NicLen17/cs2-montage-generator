@@ -15,13 +15,17 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 2. `python engine/analyze_song.py projects/<nombre>` → BPM, drops, cortes de batería, golpes vocales.
    Separar voz y música (`python -m demucs --two-stems=vocals -n htdemucs -o stems song.mp3`) para el mapa de secciones,
    y los golpes de voz aislados ("stop").
-3. `python engine/analyze_clips.py projects/<nombre>` → mirar `sheets/*.jpg`, corregir `kf.json` (kills propias reales,
-   verificadas a ojo), después `python engine/analyze_clips.py projects/<nombre> --shots`,
+3. `python engine/analyze_clips.py projects/<nombre>` → lee el killfeed (fuente de verdad: nombre del jugador a la
+   izquierda de una entrada roja = kill; el jugador se deduce de cada play) y deja `kf_auto.json`/`kf.json`,
+   `kf_conf.json` (confianza por kill) y `sheets/kf_resumen.txt`. Mirar a ojo **solo** `sheets/kf_dudosos.jpg`
+   (kills dudosas y clips con la cámara tapando el killfeed), corregir `kf.json`, después
+   `python engine/analyze_clips.py projects/<nombre> --shots` y
    `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo) y
    `python engine/reactions.py projects/<nombre> --all` (festejos grupales al final de cada play, con Demucs; ver skill §8).
 4. Escribir `projects/<nombre>/plan.py` copiando `projects/my_jealousy_v3/plan.py` y cambiando solo los datos
    (leer antes `.claude/skills/cs2-edit/references/plan.md`). Correr `python projects/<nombre>/plan.py` y revisar residuos y avisos.
-5. `python engine/check_kills.py projects/<nombre>` → sin problemas y sin avisos de TIEMPO MUERTO sin justificar.
+5. `python engine/check_kills.py projects/<nombre>` → sin problemas, sin avisos de TIEMPO MUERTO sin justificar y con
+   los avisos del KILLFEED revisados (kills que el killfeed muestra y no están en `kf.json`).
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
    Si el usuario quiere ver el video entero antes del final: `--draft` (borrador 960x540 a 30 fps en `projects/<nombre>/borrador.mp4`).
 7. Render final (en segundo plano): `python engine/build.py projects/<nombre>` → `output/<nombre>.mp4`.

@@ -10,6 +10,9 @@ Recorre TODAS las kills de kf.json/shots.json de cada clip usado en el plan y mi
 Mínimos (pisos):  normal 0.8/0.6 · primera de la play 1.2/0.6 · poco visible (hard=[i]) 1.2/1.2 ·
                   movimiento técnico (tech={i: inicio}) inicio+0.3 / 0.8 · última de la play 0.8 / 0.7 + media transición.
 Ninguna kill a menos de (media transición + 0.15 s) del centro de un corte. Excepción: el corte seco del bang bang.
+Al final cruza kf.json con el killfeed (kf_conf.json de analyze_clips.py): avisa de kills del jugador que el killfeed
+muestra y no están en kf.json (esas no aparecen en la tabla, así que nadie controla que se vean) y de kills de kf.json
+sin entrada en el killfeed.
 """
 import json, os, sys, importlib.util
 
@@ -92,6 +95,32 @@ def dead_time(p, segs, plays, bound_at, chain):
         if t1 - o > lim + 1e-3:
             out.append(f'c{c} video {o:.2f}s: {t1 - o:.2f}s después de la última kill de la toma (máx {lim:.2f}) → cortá antes, que no quede mirando la nada')
     return out
+
+
+def killfeed_check(project, plays):
+    """Cruce con el killfeed (kf_conf.json de analyze_clips.py): kills del jugador que el killfeed muestra y no están
+    en kf.json (si faltan en kf.json, la tabla de arriba nunca las controla: era el error más repetido, plays de 4
+    kills mostradas como 3) y kills de kf.json sin ninguna entrada propia en el killfeed."""
+    cf, kp = os.path.join(project, 'kf_conf.json'), os.path.join(project, 'kf.json')
+    if not os.path.exists(cf) or not os.path.exists(kp): return None
+    conf = json.load(open(cf, encoding='utf-8')); kf = json.load(open(kp))
+    out = []
+    for c in sorted(plays):
+        info = conf.get(str(c))
+        if not info or info.get('sin_killfeed'): continue        # clip del catálogo (no se escaneó) o killfeed tapado
+        mine = kf.get(str(c), [])
+        for e in info['kills']:
+            if not any(abs(e['t'] - k) <= KF_TOL for k in mine):
+                tag = 'kill segura' if e['conf'] >= 0.6 else 'posible kill (dudosa)'
+                out.append(f'c{c} {e["t"]:.2f}s: el killfeed muestra una {tag} del jugador que NO está en kf.json '
+                           f'({e["why"]}) → si es real, agregala a kf.json y corré analyze_clips.py --shots')
+        for k in mine:
+            if not any(abs(e['t'] - k) <= KF_TOL for e in info['kills']):
+                out.append(f'c{c} kill {k:.2f}s de kf.json: no hay entrada nueva del jugador en el killfeed cerca → confirmala a ojo')
+    return out
+
+
+KF_TOL = 0.7     # s: el killfeed aparece 0.1-0.45 s después del disparo; las listas a ojo a veces se corren un poco más
 
 
 def main():
@@ -209,6 +238,14 @@ def main():
                 rx_lines.append(f"c{c} {e['kind']} en {e['t0']:.2f}s: llega {e['t0'] - e['kill']:.1f}s después de la kill, demasiado tarde (se deja afuera)")
     if rx_lines:
         print('\nReacciones al cierre de las plays:'); [print('  -', x) for x in rx_lines]
+    kfc = killfeed_check(project, plays)
+    if kfc is None:
+        print('\n(Sin kf_conf.json: corré analyze_clips.py para cruzar kf.json con el killfeed.)')
+    elif kfc:
+        print(f'\n{len(kfc)} aviso(s) del KILLFEED (la lista de kills de los clips usados no coincide con lo que muestra el killfeed):')
+        for x in kfc: print('  -', x)
+    else:
+        print('\nKillfeed: las kills de kf.json coinciden con las entradas del jugador en el killfeed.')
     if '--times' in sys.argv:
         print('\nPreviews (un cuadro por kill de las plays con título):'); print(','.join(f'{t:.2f}' for t in previews))
     sys.exit(1 if problems else 0)
