@@ -42,8 +42,10 @@
   rinde lo mismo que con 10 o 12 (~30 cuadros/s en total). Cola de pedazos de 2 s + unión sin recodificar: 330 s → 281 s.
 - **Color:** curva en S (`0.42*sigmoide + 0.58*lineal`), sombras frías y luces cálidas, saturación ×1.15, enfoque suave (`1.25*f − 0.25*blur(1.2)`), bloom leve (umbral 205), viñeta suave y un 30 % del cuadro anterior como motion blur leve.
 - **Revelación** (`REVEAL = True`): en los 8 beats antes del drop principal, `reveal(f, r)` con `r` de 0 a 1:
-  `shrink(f, 0.55 + 0.45*eio(r))` (cuadro achicado al centro sobre negro, `warpAffine` lineal con borde constante 0;
-  en GPU, el shader `warp` con `zero=1`), saturación `0.35 + 0.65*ss(r)` y brillo `0.15 + 0.85*ss(r)^1.3`. El audio del
+  `shrink(f, z, ang)` con `z = 0.38 + 0.62*(0.5r + 0.5r^2.4)` (velocidad desde el primer cuadro y acelera hacia el drop)
+  y `ang = 2.5°*(1-r)^2` (`getRotationMatrix2D` + `warpAffine` lineal con borde constante 0; en GPU, el shader `warp`
+  con `zero=1`), saturación `0.35 + 0.65*ss(r)` y brillo `ss(r/0.12)*(0.2 + 0.8*ss(r)^1.3)` (fundido de ~0.5 s desde el
+  negro). Antes (`0.55 + 0.45*eio(r)`, brillo 0.15 de entrada) arrancaba quieta y aparecía de golpe. El audio del
   juego se multiplica por `0.2 + 0.8*ss(r)` en el mismo tramo (`audio.py`).
 - **Momentos para sincronizar** (`analyze_song.py`, `sync.json`): subidas de energía beat por beat (4 beats después
   contra 4 antes, mezcla completa o graves/1.5 >= 1.4 dB, máximos locales en +-3 beats), vuelta del bombo después de un

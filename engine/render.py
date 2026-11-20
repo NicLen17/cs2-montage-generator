@@ -159,18 +159,21 @@ def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
     M = np.float32([[s, 0, W / 2 - s * cx + dx], [0, s, H / 2 - s * cy + dy]])
     return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
 def zoom(f, z, dx=0, dy=0): return affine(f, z, W / 2, H / 2, dx, dy, clamp=False)
-def shrink(f, z):
-    """El cuadro achicado al centro (z < 1) sobre negro: la play "vista de lejos" de la revelación."""
-    if z >= 0.9999: return f
-    M = np.float32([[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]])
+def shrink(f, z, ang=0.0):
+    """El cuadro achicado al centro (z < 1) y apenas girado (grados) sobre negro: la play "vista de lejos"."""
+    if z >= 0.9999 and abs(ang) < 1e-3: return f
+    M = cv2.getRotationMatrix2D((W / 2, H / 2), ang, z)
     return cv2.warpAffine(f, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 def reveal(f, r):
-    """Revelación antes del drop (REVEAL = 'far' en el plan): la play arranca chica, oscura y casi sin color, y se
-    acerca e ilumina hasta llenar la pantalla justo en el drop (r = 1), donde cae su primera kill."""
-    k = ss(r)
-    f = shrink(f, 0.55 + 0.45 * eio(r))
+    """Revelación antes del drop (REVEAL = True en el plan): la play aparece chica, oscura y casi sin color y se acerca e
+    ilumina hasta llenar la pantalla justo en el drop (r = 1), donde cae su primera kill. Siempre en movimiento (pedido
+    del 20/11/2026: quieta al aparecer se veía tosca): sale del negro con un fundido corto ya acercándose, acelera hacia
+    el drop y se endereza de un giro leve."""
+    r = min(max(r, 0.0), 1.0); k = ss(r)
+    z = 0.38 + 0.62 * (0.5 * r + 0.5 * r ** 2.4)        # velocidad desde el primer cuadro, acelera hacia el drop
+    f = shrink(f, z, 2.5 * (1 - r) ** 2)
     mean = chmean(f); f = mean + (f - mean) * (0.35 + 0.65 * k)
-    return f * (0.15 + 0.85 * k ** 1.3)
+    return f * (ss(r / 0.12) * (0.2 + 0.8 * k ** 1.3))  # fundido de ~0.5 s desde el negro
 def shift(f, dx):
     M = np.float32([[1, 0, dx], [0, 1, 0]])
     return cv2.warpAffine(f, M, (W, H), borderMode=cv2.BORDER_REFLECT)

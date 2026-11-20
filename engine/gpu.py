@@ -509,10 +509,10 @@ def shift(f, dx):
     return _warp(f, [[1, 0, dx], [0, 1, 0]], False)
 
 
-def shrink(f, z):
-    if z >= 0.9999:
+def shrink(f, z, ang=0.0):
+    if z >= 0.9999 and abs(ang) < 1e-3:
         return f
-    return _warp(f, [[z, 0, W / 2 - z * W / 2], [0, z, H / 2 - z * H / 2]], False, zero=True)
+    return _warp(f, cv2.getRotationMatrix2D((W / 2, H / 2), ang, z), False, zero=True)
 
 
 def hblur(f, L):
