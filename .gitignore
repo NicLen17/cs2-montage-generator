@@ -14,6 +14,7 @@ projects/*
 !projects/my_jealousy_v3/
 projects/my_jealousy_v3/*
 !projects/my_jealousy_v3/plan.py
+!projects/my_jealousy_v3/edit.json
 !projects/my_jealousy_v3/kf.json
 !projects/my_jealousy_v3/shots.json
 !projects/my_jealousy_v3/grid.npy
@@ -26,3 +27,11 @@ projects/my_jealousy_v2/*
 
 # Programas externos descargados (RIFE para la cámara lenta: python engine/setup_rife.py)
 tools/
+
+# Referencias locales de las pruebas (salen de clips privados: cada uno genera las suyas)
+tests/ref/
+.pytest_cache/
+
+# Configuración y presets propios de cada canal (el repo trae solo presets/default.json y los de la comunidad)
+config.json
+presets/wako/

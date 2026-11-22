@@ -31,13 +31,10 @@ CAM_DEF = (25, 18, 490, 278)
 
 
 def load_plan(project):
-    spec = importlib.util.spec_from_file_location('plan', os.path.join(project, 'plan.py'))
-    cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-    m = importlib.util.module_from_spec(spec)
-    with contextlib.redirect_stdout(io.StringIO()):
-        spec.loader.exec_module(m)
-    os.chdir(cwd)
-    return m
+    """edit.json (datos, lo arma planner.py) o, en proyectos anteriores, plan.py: ver engine/project.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project as _project
+    return _project.load_plan(project, quiet=True)
 
 
 def parse_t(s):
@@ -86,7 +83,27 @@ def candidates(p, dur):
     return sorted(out, key=lambda c: -c['score'])
 
 
-def overlay_png(path, title, layout, text=True):
+def _loud(p, video, t0, D):
+    """Filtro de volumen para llevar el short al loudness de redes (preset: audio.loudness.shorts_lufs). Sin objetivo,
+    el short sale con el volumen del edit largo."""
+    import preset, re
+    L = preset.for_plan(p)['audio']['loudness']; tgt = L.get('shorts_lufs')
+    if tgt is None: return ''
+    r = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-ss', f'{t0:.3f}', '-t', f'{D:.3f}', '-i', video, '-vn',
+                        '-af', 'ebur128=peak=true', '-f', 'null', '-'], capture_output=True, text=True, errors='replace').stderr
+    I = re.findall(r'I:\s+(-?[\d.]+) LUFS', r); P = re.findall(r'Peak:\s+(-?[\d.]+)', r)
+    if not I or not P: return ''
+    g = min(float(tgt) - float(I[-1]), -1.0 - float(P[-1]))       # nunca por encima de -1 dB de pico
+    return f',volume={g:.2f}dB' if abs(g) > 0.1 else ''
+
+
+def _channel(p):
+    import preset
+    return preset.for_plan(p)['channel']
+
+
+def overlay_png(path, title, layout, text=True, channel=None):
+    channel = channel or {'name': '', 'link': ''}
     im = Image.new('RGBA', (1080, 1920), (0, 0, 0, 0))
     if text and layout == 'fit':
         d = ImageDraw.Draw(im)
@@ -96,9 +113,9 @@ def overlay_png(path, title, layout, text=True):
             for ch in txt: ds.text((xx, y + 4), ch, font=font, fill=(0, 0, 0, 170)); xx += font.getlength(ch) + spacing
             im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(6)))
             for ch in txt: d.text((x, y), ch, font=font, fill=fill); x += font.getlength(ch) + spacing
-        center('WAKO TV', ImageFont.truetype(F800, 96), 360, (255, 255, 255, 255), 10)
+        center(channel['name'].upper(), ImageFont.truetype(F800, 96), 360, (255, 255, 255, 255), 10)
         center(title.upper(), ImageFont.truetype(F600, 40), 485, (225, 205, 255, 255), 8)
-        center('twitch.tv/el_wako', ImageFont.truetype(F600, 40), 1380, (255, 255, 255, 235), 4)
+        if channel.get('link'): center(channel['link'], ImageFont.truetype(F600, 40), 1380, (255, 255, 255, 235), 4)
     im.save(path)
 
 
@@ -162,7 +179,7 @@ def render_short(p, project, video, t0, t1, layout, text, out, sheet):
     D = t1 - t0
     if D > 60: print(f'Aviso: {D:.0f} s pasa de 60 s (algunas plataformas lo toman como video normal).')
     print(f'Short: {fmt(t0)} → {fmt(t1)} ({D:.1f} s), layout {layout} → {os.path.basename(out)}', flush=True)
-    ov = os.path.join(project, f'short_overlay_{os.path.basename(out)}.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), layout, text)
+    ov = os.path.join(project, f'short_overlay_{os.path.basename(out)}.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), layout, text, _channel(p))
     fo = max(0.0, D - 1.0)
     if layout == 'fit':
         fc = ('[0:v]split[a][b];'
@@ -179,7 +196,7 @@ def render_short(p, project, video, t0, t1, layout, text, out, sheet):
     fc += f',fade=t=in:st=0:d=0.2,fade=t=out:st={fo:.3f}:d=1.0,format=yuv420p[v]'
     cmd = ['ffmpeg', '-v', 'error', '-y', '-ss', f'{t0:.3f}', '-t', f'{D:.3f}', '-i', video, '-loop', '1', '-i', ov,
            '-filter_complex', fc, '-map', '[v]', '-map', '0:a',
-           '-af', f'afade=t=in:st=0:d=0.25,afade=t=out:st={fo:.3f}:d=1.0',
+           '-af', f'afade=t=in:st=0:d=0.25,afade=t=out:st={fo:.3f}:d=1.0' + _loud(p, video, t0, D),
            *video_encoder_args('final', 16), '-r', str(p.FPS), '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', out]
     r = subprocess.run(cmd)
     os.remove(ov)

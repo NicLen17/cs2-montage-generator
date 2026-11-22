@@ -1,0 +1,15 @@
+# La imagen lleva solo el motor: proyectos, clips y resultados se montan con -v (ver Dockerfile)
+.git
+.venv
+.claude
+.pytest_cache
+**/__pycache__
+projects
+output
+entrada
+backup
+catalog
+tools
+tests/ref
+config.json
+presets/wako

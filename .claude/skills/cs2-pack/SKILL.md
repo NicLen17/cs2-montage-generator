@@ -1,6 +1,6 @@
 ---
 name: "cs2-pack"
-description: "Skill POR DEFECTO del proyecto wako-edits cuando llegan clips y una canción: arma el edit para YouTube, 2 a 4 shorts verticales para TikTok, Instagram Reels y YouTube Shorts, la miniatura, los textos de cada plataforma y una carpeta de entrega lista para subir, con un solo pedido. Usala SIEMPRE que el usuario adjunte o deje clips (.mp4) y una canción (en el chat, en entrada/ o en una carpeta), escriba /cs2-pack, diga 'hacé un edit', 'hacé todo', 'el paquete completo' o 'para YouTube y redes'. Solo si pide únicamente el video largo ('solo el edit', 'sin shorts', /cs2-edit) se usa cs2-edit sola."
+description: "Skill POR DEFECTO del proyecto CS2 Montage Generator cuando llegan clips y una canción: arma el edit para YouTube, 2 a 4 shorts verticales para TikTok, Instagram Reels y YouTube Shorts, la miniatura, los textos de cada plataforma y una carpeta de entrega lista para subir, con un solo pedido. Usala SIEMPRE que el usuario adjunte o deje clips (.mp4) y una canción (en el chat, en entrada/ o en una carpeta), escriba /cs2-pack, diga 'hacé un edit', 'hacé todo', 'el paquete completo' o 'para YouTube y redes'. Solo si pide únicamente el video largo ('solo el edit', 'sin shorts', /cs2-edit) se usa cs2-edit sola."
 ---
 
 # Paquete completo: edit + shorts + miniatura + textos

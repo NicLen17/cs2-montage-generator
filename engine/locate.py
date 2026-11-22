@@ -15,14 +15,10 @@ ROOT = os.path.dirname(ENGINE)
 
 
 def load_plan(project):
-    spec = importlib.util.spec_from_file_location('plan', os.path.join(project, 'plan.py'))
-    cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-    import io, contextlib
-    m = importlib.util.module_from_spec(spec)
-    with contextlib.redirect_stdout(io.StringIO()):
-        spec.loader.exec_module(m)
-    os.chdir(cwd)
-    return m
+    """edit.json (datos, lo arma planner.py) o, en proyectos anteriores, plan.py: ver engine/project.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project as _project
+    return _project.load_plan(project, quiet=True)
 
 
 def parse_t(s):

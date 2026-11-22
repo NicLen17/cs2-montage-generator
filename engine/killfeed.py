@@ -3,7 +3,9 @@
 Uso desde código (lo llama engine/analyze_clips.py):
     fr = scan('clips/c3.mp4')          # etapa 1 (lenta, decodifica el video): entradas con borde rojo de cada cuadro
     names = player_names(frs)          # nombres del jugador deducidos de todas las plays del proyecto
-    ev = detect(fr, names=names)       # etapa 2 (rápida): una kill por entrada NUEVA en la que el jugador es el atacante
+    nick = nick.templates(nicks, frs)  # opcional: plantillas del nick declarado en el preset (engine/nick.py)
+    env = audio_env('clips/c3.mp4')    # opcional: envolvente del audio, segunda señal (disparos)
+    ev = detect(fr, names=names, nick=nick, audio=env)   # etapa 2 (rápida): una kill por entrada NUEVA del jugador
 
 Cómo lee el killfeed:
   - Las entradas propias (las que involucran al jugador) tienen borde rojo. En cada cuadro se buscan los bordes
@@ -17,8 +19,12 @@ Cómo lee el killfeed:
   - Kill o muerte: dentro de la caja se busca el nombre del jugador. Es el primer nombre (los íconos de cegado, bomba
     o rango que van antes no cuentan) = mató, también en "Jugador + Compañero → X"; al final = murió; después de
     otro nombre ("Compañero + Jugador → X") = asistencia. Después de la muerte del jugador no hay kills propias.
-  - El jugador se deduce de cada play: es el nombre que aparece en más entradas rojas distintas (no hay nicks fijos).
+  - El jugador se deduce de cada play: es el nombre que aparece en más entradas rojas distintas.
     Si en un clip no se repite ningún nombre, se usan los deducidos de los otros clips del proyecto (player_names).
+    Si el preset del canal declara el nick ("channel.player"), sus plantillas (engine/nick.py) valen en todos los clips.
+  - Dónde está el killfeed sale de layout(): resolución, relación de aspecto, barras laterales y escala del HUD.
+  - Audio: una entrada dudosa sin un disparo en el medio segundo anterior se descarta; una kill leída sin disparo pasa
+    a dudosa. Cada evento lleva 'shot' (fuerza del disparo) y 'tipo' (íconos: headshot, pared, humo).
   - Con un flash la pantalla queda blanca y el borde rosado pálido: en esos cuadros también valen pares de líneas finas
     rosadas.
   - Cada evento lleva un puntaje de confianza (0-1). Los dudosos (< DOUBT) son los únicos que hay que mirar a ojo.
@@ -27,7 +33,9 @@ import os, subprocess, json
 import numpy as np, cv2
 
 
-CROP = (1250, 24, 670, 394)      # x, y, ancho, alto (1920x1080); se reescala si el clip tiene otra resolución
+CROP = (1250, 24, 670, 394)      # x, y, ancho, alto en 1920x1080 con el HUD de fábrica; para otros formatos ver layout()
+BOX_H = 31.5                     # alto de una entrada en el recorte con el HUD a escala 1
+HUD_OK = (0.8, 1.1)              # escalas de HUD que el recorte normal lee bien (en el catálogo hay de 0.83 a 1.02)
 MIN_LINE = 100                   # píxeles rojos mínimos en una fila para ser borde horizontal de una entrada
 MIN_LIFE = 0.5                   # s: menos que esto en pantalla = parpadeo
 FLASH = 165                      # brillo medio del recorte a partir del cual se considera la pantalla blanca de un flash
@@ -35,6 +43,11 @@ SCAN_VERSION = 7                 # subir si cambia la etapa 1 (invalida catalog/
 GAP = 7                          # px sin texto que separan el nombre del arma o del "+"
 NAME_OK = 0.7                    # parecido mínimo con la plantilla para reconocer el nombre del jugador
 DEATH_OK = 0.55                  # parecido mínimo para dar por muerte una entrada con el jugador al final (aunque esté desvaída)
+AFTER_DEATH = 8.0                # s después de morir a partir de los cuales una kill bien leída vuelve a valer (otra ronda)
+BACK_OK = 0.85                   # parecido mínimo del nombre para esa kill
+NO_SHOT = 0.6                    # una entrada dudosa sin un transitorio de disparo así de fuerte antes no es una kill
+QUIET = 0.4                      # una kill leída sin transitorio (menos que esto) pasa a dudosa: mirar a ojo
+NARROW = 140                     # px: una caja más angosta que esto casi nunca es una entrada (nombre + arma + nombre)
 DOUBT = 0.6                      # eventos con confianza menor se marcan para revisar a ojo
 
 
@@ -134,14 +147,62 @@ def text_of(reg, box):
     return np.maximum(t[..., 0], t[..., 1])
 
 
-def scan(path, keep_text=4):
-    """Etapa 1: decodifica el recorte del killfeed y devuelve dict(fps, n, boxes=[[(y0,y1,xl,xr),...] por cuadro],
-    text={(cuadro, i): imagen}) con el texto de cada caja cada `keep_text` cuadros."""
-    fps, W, H = probe(path)
-    sx, sy = W / 1920, H / 1080
-    x, y, w, h = [int(round(v * s)) for v, s in zip(CROP, (sx, sy, sx, sy))]
-    vf = f'crop={w}:{h}:{x}:{y}' + ('' if (W, H) == (1920, 1080) else f',scale={CROP[2]}:{CROP[3]}')
+def layout(W, H, hud=1.0, aspect=None, bars=0):
+    """Dónde está el killfeed en un clip de W x H: dict(x, y, w, h) en píxeles del clip, más los parámetros usados.
+    El killfeed va pegado arriba a la derecha de la imagen del juego y su tamaño sigue al alto de pantalla:
+      - otra resolución u otra relación de aspecto nativa (16:10, 4:3 sin estirar): misma región, medida desde la derecha;
+      - `bars`: px de barra negra a cada lado (4:3 con barras dentro de un video 16:9): se mide desde donde termina el juego;
+      - `aspect='4:3s'` (4:3 ESTIRADO a todo el ancho): el HUD sale ensanchado; el recorte se ensancha igual y al
+        llevarlo a 670x394 las entradas vuelven a su proporción (también '5:4s' y '16:10s');
+      - `hud`: escala del HUD respecto de la de fábrica (entradas más grandes o más chicas).
+    Con 1920x1080, hud=1 y sin barras da exactamente CROP."""
+    cw = W - 2 * bars
+    s_ = H / 1080 * hud
+    k = 1.0
+    if aspect and aspect.endswith('s'):
+        a, b = aspect[:-1].split(':'); k = (cw / H) / (float(a) / float(b))
+    w = min(cw, CROP[2] * s_ * k); h = min(H, CROP[3] * s_)
+    return dict(x=int(round(bars + cw - w)), y=int(round(min(CROP[1] * s_, H - h))), w=int(round(w)), h=int(round(h)),
+                hud=hud, aspect=aspect, bars=bars)
+
+
+def pillarbox(path, W, H, n=5):
+    """Ancho (px) de las barras negras a los costados (juego en 4:3 dentro de un video más ancho), 0 si no hay.
+    Mira n cuadros repartidos: las barras tienen que estar negras en todos y ser parejas a los dos lados."""
+    cap = cv2.VideoCapture(path); total = int(cap.get(7)); dark = None; lit = 0
+    for i in range(n):
+        cap.set(1, int(total * (i + 1) / (n + 1))); ok, f = cap.read()
+        if not ok: continue
+        col = f.max(2).mean(0)                                # brillo medio de cada columna
+        dark = (col < 12) if dark is None else dark & (col < 12)
+        lit += col[W // 3:2 * W // 3].mean() > 25
+    cap.release()
+    if dark is None or lit < 2: return 0
+    l = int(np.argmin(dark)) if not dark.all() else 0; r = int(np.argmin(dark[::-1])) if not dark.all() else 0
+    return min(l, r) if min(l, r) >= 0.04 * W and abs(l - r) <= 0.02 * W else 0
+
+
+def _guess_hud(path, W, H, aspect, bars, n=40):
+    """Escala de HUD con la que más cuadros muestran entradas, probando sobre n cuadros sueltos. Para cuando el
+    recorte normal no encuentra nada (HUD mucho más grande o más chico). None si ninguna encuentra entradas."""
+    cap = cv2.VideoCapture(path); total = int(cap.get(7)); frames = []
+    for i in range(n):
+        cap.set(1, int(total * (i + 0.5) / n)); ok, f = cap.read()
+        if ok: frames.append(f)
+    cap.release()
+    best = (4, None)                                          # hacen falta al menos 5 cuadros con entradas
+    for hud in (1.0, 1.3, 1.6, 0.7, 0.55):
+        L = layout(W, H, hud, aspect, bars); c = 0; hs = []
+        for f in frames:
+            bx = entries(cv2.resize(f[L['y']:L['y'] + L['h'], L['x']:L['x'] + L['w']], (CROP[2], CROP[3]), interpolation=cv2.INTER_AREA))
+            c += bool(bx); hs += [b[1] - b[0] for b in bx]
+        if c > best[0]: best = (c, round(hud * float(np.median(hs)) / BOX_H, 2))
+    return best[1]
+
+
+def _scan_pass(path, L, keep_text):
     w, h = CROP[2], CROP[3]
+    vf = f'crop={L["w"]}:{L["h"]}:{L["x"]}:{L["y"]}' + ('' if (L['w'], L['h']) == (w, h) else f',scale={w}:{h}')
     p = subprocess.Popen(['ffmpeg', '-v', 'error', '-i', path, '-vf', vf, '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-'],
                          stdout=subprocess.PIPE)
     boxes, lines, text = [], [], {}
@@ -156,7 +217,38 @@ def scan(path, keep_text=4):
                 text[(i, k)] = text_of(reg, box)
         i += 1
     p.wait()
-    return dict(fps=fps, n=len(boxes), boxes=boxes, lines=lines, text=text)
+    return boxes, lines, text
+
+
+def scan(path, keep_text=4, hud=None, aspect=None):
+    """Etapa 1: decodifica el recorte del killfeed y devuelve dict(fps, n, boxes=[[(y0,y1,xl,xr),...] por cuadro],
+    text={(cuadro, i): imagen}, layout) con el texto de cada caja cada `keep_text` cuadros.
+    `hud` = escala del HUD (None: la deduce; solo vuelve a leer el clip si las entradas salen fuera de HUD_OK o no
+    aparece ninguna) y `aspect` = '4:3s' si el juego está estirado (eso no se puede deducir: ver layout())."""
+    fps, W, H = probe(path)
+    bars = pillarbox(path, W, H) if W / H > 1.4 else 0
+    L = layout(W, H, hud or 1.0, aspect, bars)
+    boxes, lines, text = _scan_pass(path, L, keep_text)
+    hs = [b[1] - b[0] for bx in boxes for b in bx]
+    est = round(L['hud'] * float(np.median(hs)) / BOX_H, 2) if hs else None
+    if hud is None:
+        with_box = sum(1 for bx in boxes if bx)
+        new = _guess_hud(path, W, H, aspect, bars) if with_box < 10 else (est if not HUD_OK[0] <= est <= HUD_OK[1] else None)
+        if new is not None and not HUD_OK[0] <= new <= HUD_OK[1]:
+            L = layout(W, H, new, aspect, bars)
+            boxes, lines, text = _scan_pass(path, L, keep_text)
+            hs = [b[1] - b[0] for bx in boxes for b in bx]
+            est = round(L['hud'] * float(np.median(hs)) / BOX_H, 2) if hs else None
+    L['hud_medido'] = est
+    return dict(fps=fps, n=len(boxes), boxes=boxes, lines=lines, text=text, layout=L)
+
+
+def view(frame, L=None, size=(465, 180)):
+    """El killfeed de un cuadro entero, para las hojas de revisión (la parte de arriba del recorte de `layout`)."""
+    H, W = frame.shape[:2]
+    L = L or layout(W, H)
+    x0 = L['x'] + int(0.075 * L['w']); y1 = L['y'] + int(0.61 * L['h'])
+    return cv2.resize(frame[L['y']:y1, x0:L['x'] + L['w']], size)
 
 
 # ---------------------------------------------------------------- etapa 2: seguir entradas y decidir kill / muerte
@@ -374,12 +466,14 @@ def _where(sig, tpls):
     sp = _span(sig) if sig is not None else None
     sl = sr = sm = 0.0
     if sp is None: return sl, sr, sm
-    for tp in tpls:
-        s, x = _find(sig, tp)
-        if x < 0: continue
-        if sp[1] - (x + tp.shape[1]) <= 10: sr = max(sr, s)
-        elif not _names_before(sig, x): sl = max(sl, s)
-        else: sm = max(sm, s)
+    # con varias plantillas (el nick a distintas escalas de HUD) decide la que mejor coincide: las otras encuentran
+    # parecidos flojos en cualquier lado de la entrada y taparían una muerte o inventarían una kill
+    best = max(((_find(sig, tp), tp) for tp in tpls), key=lambda q: q[0][0], default=None)
+    if best is None or best[0][1] < 0: return sl, sr, sm
+    (s, x), tp = best
+    if sp[1] - (x + tp.shape[1]) <= 10: sr = s
+    elif not _names_before(sig, x): sl = s
+    else: sm = s
     return sl, sr, sm
 
 
@@ -402,21 +496,21 @@ def _live(fr):
     return [t for t in tracks(fr) if t['first'] > 2 and (t['last'] - t['first'] + 1) / fr['fps'] >= MIN_LIFE]
 
 
-def _unique(trs):
+def _unique(trs, fps=60.0):
     """Una sola vez cada entrada: sin las que se volvieron a leer (apareció otra caja debajo antes) ni las repetidas."""
     out = []
     for t in sorted(trs, key=lambda t: t['start']):
         if t.get('below') or t['sig'] is None: continue
-        if any(t['start'] - o['start'] < 20 * 60 and _same_text(t['sig'], o['sig'], vict=0.85) for o in out): continue
+        if any(t['start'] - o['start'] < 20 * fps and _same_text(t['sig'], o['sig'], vict=0.85) for o in out): continue
         out.append(t)
     return out
 
 
-def clip_name(trs):
+def clip_name(trs, fps=60.0):
     """El jugador de la play: todas las entradas con borde rojo lo nombran (como atacante, víctima o asistencia), así
     que es el nombre que aparece en más entradas distintas. Candidatos: el primer y el último nombre de cada entrada.
     Devuelve (imagen del nombre, en cuántas entradas aparece) o (None, 0) si ningún nombre se repite."""
-    trs = _unique(trs)
+    trs = _unique(trs, fps)
     cands = []
     for t in trs:
         for side in ('L', 'R'):
@@ -434,32 +528,113 @@ def clip_name(trs):
 def player_names(frs):
     """Nombres del jugador en un proyecto (uno por cuenta), deducidos de las plays donde un nombre se repite. Sirven
     para los clips con una sola entrada roja, donde no hay repetición que diga quién es el jugador."""
-    found = [n for n, c in (clip_name(_live(fr)) for fr in frs) if n is not None]
+    found = [n for n, c in (clip_name(_live(fr), fr['fps']) for fr in frs) if n is not None]
     return [_medoid(g) for g in _groups(found)]
+
+
+# ---------------------------------------------------------------- tipo de kill (íconos de la entrada)
+
+ICONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'kf_icons')
+# parecido mínimo con la plantilla de cada ícono. Medido en 356 entradas del catálogo: el ícono de pared da hasta 0.82
+# contra la plantilla de headshot y los headshots de verdad dan 0.87 o más; pared y humo, 0.90 o más contra 0.83 y 0.73
+# de lo que no lo es. El noscope quedó afuera: hay un solo ejemplo en el catálogo y su plantilla (líneas finas) da
+# 0.83-0.90 en entradas sin el ícono; con más ejemplos alcanza con agregar noscope_N.png y su umbral acá.
+ICON_OK = dict(headshot=0.85, pared=0.88, humo=0.85)
+_icons = None
+
+
+def _icon_tpls():
+    """{tipo: [plantillas]} de engine/assets/kf_icons/<tipo>_N.png, cada una a varias escalas (el HUD del catálogo va
+    de 0.83 a 1.02 y las plantillas salen de entradas de las dos puntas)."""
+    global _icons
+    if _icons is None:
+        _icons = {}
+        for f in sorted(os.listdir(ICONS)) if os.path.isdir(ICONS) else []:
+            im = cv2.imread(os.path.join(ICONS, f), cv2.IMREAD_GRAYSCALE)
+            if im is None: continue
+            for sc in (0.85, 0.92, 1.0, 1.08, 1.17):
+                t = im if sc == 1.0 else cv2.resize(im, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC)
+                _icons.setdefault(f.rsplit('_', 1)[0], []).append(t)
+    return _icons
+
+
+def kill_type(sig):
+    """Íconos de la entrada entre el arma y la víctima: {'headshot': 0.93, 'pared': 0.85, ...} con el parecido de los
+    que pasan su umbral (pared = wallbang, humo = a través de humo). {} si no hay ninguno o no hay imagen."""
+    out = {}
+    if sig is None: return out
+    big = cv2.copyMakeBorder(np.ascontiguousarray(sig, np.uint8), 2, 2, 2, 2, cv2.BORDER_REPLICATE).astype(np.float32)
+    for kind, tpls in _icon_tpls().items():
+        if kind not in ICON_OK: continue
+        best = 0.0
+        for t in tpls:
+            if t.shape[0] > big.shape[0] or t.shape[1] > big.shape[1]: continue
+            best = max(best, float(cv2.matchTemplate(big, t.astype(np.float32), cv2.TM_CCOEFF_NORMED).max()))
+        if best >= ICON_OK[kind]: out[kind] = round(best, 2)
+    return out
+
+
+# ---------------------------------------------------------------- audio: transitorios de disparo (segunda señal)
+
+ENV_SR = 1000                    # muestras por segundo de la envolvente
+
+
+def audio_env(path, sr=48000):
+    """Envolvente de la banda de los disparos (1.5-9 kHz) del audio de un clip, a ENV_SR muestras por segundo.
+    None si el clip no tiene audio (o dura menos de 1 s)."""
+    from scipy.signal import butter, sosfiltfilt
+    a = np.frombuffer(subprocess.run(['ffmpeg', '-v', 'error', '-i', path, '-ac', '1', '-ar', str(sr), '-f', 'f32le', '-'],
+                                     capture_output=True).stdout, np.float32).astype(float)
+    if len(a) < sr: return None
+    hh = sosfiltfilt(butter(4, [1500, 9000], 'band', fs=sr, output='sos'), a)
+    return np.sqrt(np.convolve(hh ** 2, np.ones(96) / 96, 'same'))[::sr // ENV_SR].astype(np.float32)
+
+
+def shot_rise(env, t, ref=None):
+    """Fuerza del transitorio más marcado en el medio segundo anterior a t (la entrada del killfeed aparece ~0.1 s
+    después del disparo), relativa al nivel alto del clip (percentil 90). ~1.6 en una kill típica; el 95 % de las
+    kills verificadas pasa de 0.67. None sin audio."""
+    if env is None or len(env) < ENV_SR: return None
+    seg = env[max(0, int((t - 0.45) * ENV_SR)):int((t + 0.06) * ENV_SR)]
+    if len(seg) <= 20: return None
+    ref = float(np.percentile(env, 90)) if ref is None else ref
+    return float((seg[10:] - seg[:-10]).max() / (ref + 1e-9))
 
 
 # ---------------------------------------------------------------- etapa 2 completa: eventos con confianza
 
-def detect(fr, names=None):
+def detect(fr, names=None, nick=None, audio=None):
     """Kills propias del clip: [dict(t, conf, why, life, kind)] por tiempo. kind 'kill' = el jugador es el atacante
     (primer nombre) de una entrada nueva; 'dudosa' = entrada nueva en la que no se pudo leer quién mató. Muertes,
     asistencias, entradas repetidas y todo lo posterior a la muerte del jugador no son kills: quedan en fr['otros'].
     El jugador se deduce de la propia play (clip_name); si en el clip no se repite ningún nombre, se prueba con
-    `names` (player_names del resto del proyecto)."""
+    `names` (player_names del resto del proyecto). `nick` = plantillas del nick declarado en el preset del canal
+    (engine/nick.py): si están, el jugador es ese y no hace falta que el nombre se repita. `audio` = audio_env del clip:
+    cada evento lleva 'shot' (shot_rise); una entrada dudosa sin disparo se descarta y una kill sin disparo pasa a
+    dudosa."""
     fps = fr['fps']
+    ref = float(np.percentile(audio, 90)) if audio is not None and len(audio) >= ENV_SR else None
     trs = _live(fr)
-    tp, cnt = clip_name(trs); src = 'clip'
+    tp, cnt = clip_name(trs, fps); src = 'clip'
     if tp is None and names:
         sc = [(max([_find(t['sig'], n)[0] for t in trs] or [0.0]), k) for k, n in enumerate(names)]
         s_, k = max(sc) if sc else (0.0, -1)
         if s_ >= 0.8: tp, src = names[k], 'proyecto'
-    fr['jugador'] = dict(src=src if tp is not None else None, veces=cnt)
+    tpls = [tp] if tp is not None else []
+    if nick:
+        tpls = tpls + list(nick); src = 'nick' if tp is None or src != 'clip' or not tpls[:1] or tpls[0] is not tp else 'clip'
+    fr['jugador'] = dict(src=src if tpls else None, veces=cnt)
     ev, otros, victims = [], [], []
     dead = None                                  # cuándo murió el jugador (después no puede haber kills propias)
     for t in sorted(trs, key=lambda t: t['start']):
         tt = round(t['start'] / fps, 3)
         if dead is not None and t['start'] > dead + 0.1 * fps:
-            otros.append(dict(t=tt, kind='después de morir', why=f'el jugador murió en {dead / fps:.2f}s')); continue
+            # ...salvo que el jugador vuelva a aparecer bien leído como atacante un rato después: es otra ronda (un
+            # clip largo) o la "muerte" estaba mal leída
+            s_back = _where(t['sig'], tpls)[0] if tpls and t['start'] > dead + AFTER_DEATH * fps and not t.get('below') else 0.0
+            if s_back >= BACK_OK: dead = None
+            else:
+                otros.append(dict(t=tt, kind='después de morir', why=f'el jugador murió en {dead / fps:.2f}s')); continue
         if t.get('below'):
             otros.append(dict(t=tt, kind='repetida', why='ya había otra entrada debajo: es una que se volvió a leer')); continue
         # la misma entrada (mismo atacante, arma y víctima) que ya se contó hace menos de 20 s: se perdió y volvió a
@@ -470,12 +645,15 @@ def detect(fr, names=None):
         life = (t['last'] - t['start'] + 1) / fps
         exp = min(4.5, (fr['n'] - t['start']) / fps)
         k_life = 1.0 if life >= 0.4 * exp else 0.7
-        sl, sr, sm = _where(t['sig'], [tp]) if tp is not None else (0.0, 0.0, 0.0)
+        sl, sr, sm = _where(t['sig'], tpls) if tpls else (0.0, 0.0, 0.0)
+        shot = shot_rise(audio, tt, ref) if ref is not None else None
         if sl >= NAME_OK and sl >= sr:
-            conf = (0.75 + 0.25 * min(1.0, (sl - NAME_OK) / (1 - NAME_OK))) * k_life * (1.0 if src == 'clip' else 0.9)
-            why = f'jugador a la izquierda ({sl:.2f})' + ('' if src == 'clip' else ', nombre de otro clip') \
+            conf = (0.75 + 0.25 * min(1.0, (sl - NAME_OK) / (1 - NAME_OK))) * k_life * (0.9 if src == 'proyecto' else 1.0)
+            why = f'jugador a la izquierda ({sl:.2f})' + (', nombre de otro clip' if src == 'proyecto' else '') \
                 + ('' if k_life == 1 else f', dura poco ({life:.1f}s)')
-            ev.append(dict(t=tt, conf=round(conf, 2), why=why, life=round(life, 2), kind='kill'))
+            if shot is not None and shot < QUIET:
+                conf *= 0.6; why += f', sin disparo en el audio ({shot:.2f})'
+            ev.append(dict(t=tt, conf=round(conf, 2), why=why, life=round(life, 2), kind='kill', tipo=sorted(kill_type(t['sig']))))
             victims.append((t['start'], t['sig'], t['y00']))
         elif sr >= DEATH_OK and sl < 0.5:
             otros.append(dict(t=tt, kind='muerte', why=f'jugador a la derecha ({sr:.2f})'))
@@ -483,9 +661,11 @@ def detect(fr, names=None):
             if sr >= NAME_OK and life >= min(1.5, 0.5 * exp): dead = t['start']
         elif sm >= 0.8:
             otros.append(dict(t=tt, kind='asistencia', why=f'jugador después de otro nombre ({sm:.2f})'))
+        elif shot is not None and (shot < NO_SHOT or (t['w'] < NARROW and shot < 1.0)):
+            otros.append(dict(t=tt, kind='sin disparo', why=f'no se leyó el nombre y no hay disparo en el audio ({shot:.2f})'))
         else:
-            why = 'no se leyó el nombre del jugador' if tp is not None else 'una sola entrada: no se sabe cuál es el jugador'
-            ev.append(dict(t=tt, conf=round(0.45 * k_life, 2), why=why, life=round(life, 2), kind='dudosa'))
+            why = 'no se leyó el nombre del jugador' if tpls else 'una sola entrada: no se sabe cuál es el jugador'
+            ev.append(dict(t=tt, conf=round(0.45 * k_life, 2), why=why, life=round(life, 2), kind='dudosa', tipo=sorted(kill_type(t['sig']))))
             victims.append((t['start'], t['sig'], t['y00']))
     # dos eventos casi juntos con el mismo texto o en la misma fila son la misma entrada (caja partida en un cuadro) -> uno. Con texto
     # distinto, en otra fila y las dos leídas como kill son dos kills (un collateral pone dos entradas casi juntas)
@@ -495,5 +675,7 @@ def detect(fr, names=None):
             if e['conf'] > out[-1]['conf']: out[-1] = e
             continue
         out.append(e); sigs.append((sg, yy))
+    if ref is not None:
+        for e in out: e['shot'] = round(shot_rise(audio, e['t'], ref) or 0.0, 2)
     fr['otros'] = otros
     return out

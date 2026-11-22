@@ -15,11 +15,10 @@ ENGINE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_plan(project):
-    spec = importlib.util.spec_from_file_location('plan', os.path.join(project, 'plan.py'))
-    cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-    os.chdir(cwd)
-    return m
+    """edit.json (datos, lo arma planner.py) o, en proyectos anteriores, plan.py: ver engine/project.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project as _project
+    return _project.load_plan(project)
 
 
 def frame_diffs(path):
@@ -69,7 +68,9 @@ def main():
     I = [l for l in r.splitlines() if l.strip().startswith('I:')]; P = [l for l in r.splitlines() if l.strip().startswith('Peak:')]
     if I and P:
         lufs = float(I[-1].split()[1]); peak = float(P[-1].split()[1])
-        print(f'Volumen: {lufs:.1f} LUFS, pico {peak:.1f} dBFS'
+        import preset
+        tgt = preset.for_plan(p)['audio']['loudness']['target_lufs']
+        print(f'Volumen: {lufs:.1f} LUFS, pico {peak:.1f} dBFS' + (f' (objetivo del preset: {tgt:g} LUFS)' if tgt is not None else '')
               + ('  → pico alto: bajá el audio con ffmpeg -c:v copy -af volume=-1.2dB' if peak > -1.0 else ''))
 
 

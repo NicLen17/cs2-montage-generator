@@ -6,6 +6,8 @@
     python engine/eval_kills.py --doubt              -> lista de los eventos dudosos y si eran kill o no
     python engine/eval_kills.py --disagree           -> kills seguras del killfeed que el catálogo no tiene (hoja en kf_cache/)
     python engine/eval_kills.py --root <repo>        -> carpeta con catalog/ y projects/ (por defecto, la del repo)
+    python engine/eval_kills.py --player Wako,ElWako -> con ese nick del jugador (por defecto, el del preset; "" = ninguno)
+    python engine/eval_kills.py --no-audio           -> sin el audio como segunda señal (solo el killfeed)
 
 Verdad: las kills de los clips marcados verified en catalog/clips.json (una entrada por clip original, sin repetir).
 El video de cada clip sale de la copia a 60 fps de algún proyecto (clips_map.txt) o, si no hay, de entrada/.
@@ -19,6 +21,7 @@ import numpy as np
 ENGINE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ENGINE)
 import killfeed as K
+import nick as N
 
 TOL = 0.35
 
@@ -61,6 +64,19 @@ def cached_scan(args):
     fr = K.scan(v)
     pickle.dump(dict(key=key, fr=fr), open(f, 'wb'), protocol=4)
     return v, fr
+
+
+def cached_env(args):
+    """La envolvente del audio de cada clip (segunda señal del detector), también en catalog/kf_cache/."""
+    k, v, cache = args
+    f = os.path.join(cache, k + '.env.pkl')
+    key = (os.path.getsize(v), int(os.path.getmtime(v)), K.ENV_SR)
+    if os.path.exists(f):
+        d = pickle.load(open(f, 'rb'))
+        if d.get('key') == key: return v, d['env']
+    env = K.audio_env(v)
+    pickle.dump(dict(key=key, env=env), open(f, 'wb'), protocol=4)
+    return v, env
 
 
 def baseline(v):
@@ -126,6 +142,7 @@ def main():
     ap.add_argument('--baseline', action='store_true'); ap.add_argument('-v', action='store_true')
     ap.add_argument('--refresh', action='store_true'); ap.add_argument('--doubt', action='store_true')
     ap.add_argument('--disagree', action='store_true')
+    ap.add_argument('--player', default=None); ap.add_argument('--no-audio', action='store_true')
     a = ap.parse_args()
     cache = os.path.join(a.root, 'catalog', 'kf_cache'); os.makedirs(cache, exist_ok=True)
     dsf = os.path.join(cache, 'dataset.json')
@@ -137,6 +154,7 @@ def main():
     vids = [d['video'] for d in data]
     with ProcessPoolExecutor() as ex:
         frs = dict(ex.map(cached_scan, [(d['slug'], d['video'], cache) for d in data]))
+        envs = {} if a.no_audio else dict(ex.map(cached_env, [(d['slug'], d['video'], cache) for d in data]))
         base = None
         if a.baseline:
             bf = os.path.join(cache, 'baseline.json')
@@ -144,9 +162,13 @@ def main():
             todo = [v for v in vids if v not in base]
             base.update(dict(ex.map(baseline, todo))); json.dump(base, open(bf, 'w'), indent=1)
     # el jugador se deduce de cada play (el nombre que se repite en sus entradas rojas); para los clips con una sola
-    # entrada se usan los nombres deducidos del resto (como en un proyecto con muchos clips)
+    # entrada se usan los nombres deducidos del resto (como en un proyecto con muchos clips). Si el preset declara el
+    # nick, sus plantillas se aprenden de estos mismos clips (sin guardarlas: la evaluación no escribe en catalog/nicks/)
     names = K.player_names([frs[v] for v in vids])
-    evs = {v: K.detect(frs[v], names=names) for v in vids}
+    nicks = [x.strip() for x in a.player.split(',') if x.strip()] if a.player is not None else N.configured()
+    nick = N.templates(nicks, [frs[v] for v in vids], save=False)
+    if nicks: print(f'nick del jugador: {", ".join(nicks)} ({len(nick)} plantillas)')
+    evs = {v: K.detect(frs[v], names=names, nick=nick, audio=envs.get(v)) for v in vids}
     allk = {v: [e['t'] for e in ev] for v, ev in evs.items()}
     sure = {v: [e['t'] for e in ev if e['conf'] >= K.DOUBT] for v, ev in evs.items()}
     doubt = {v: [e['t'] for e in ev if e['conf'] < K.DOUBT] for v, ev in evs.items()}
@@ -172,9 +194,9 @@ def main():
             for e in evs[d['video']]:
                 if e['conf'] >= K.DOUBT and not any(abs(e['t'] - t) <= 0.7 for t in d['kills']):
                     print(f'   {d["slug"]}  {e["t"]:.2f}s  (catálogo: {d["kills"]})')
-                    cap = cv2.VideoCapture(d['video']); cap.set(1, int((e['t'] + 0.6) * 60)); ok, f = cap.read()
+                    cap = cv2.VideoCapture(d['video']); cap.set(1, int((e['t'] + 0.6) * frs[d['video']]['fps'])); ok, f = cap.read()
                     if ok:
-                        k = cv2.resize(f[25:265, 1300:1920], (465, 180))
+                        k = K.view(f, frs[d['video']].get('layout'))
                         cv2.putText(k, f'{d["slug"][:26]} {e["t"]:.2f}', (6, 172), 0, 0.5, (0, 255, 255), 1); rows.append(k)
         if rows:
             while len(rows) % 4: rows.append(np.zeros_like(rows[0]))

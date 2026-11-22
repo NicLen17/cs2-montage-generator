@@ -6,10 +6,13 @@
     python engine/catalog.py set <parte_del_nombre|cN@proyecto> clave=valor ...
             claves: weapon, map, rating (1-5), tags (coma), notes, cam (x0,y0,x1,y1), verified (si/no)
     python engine/catalog.py list [--unused] [--min-rating 4] [--tag ace] [--weapon awp] [--map mirage] [--all]
+                                  [--sort score]   -> ordena por el puntaje automático (engine/score.py) en vez del rating a mano
     python engine/catalog.py show <parte_del_nombre>
 
 El catálogo vive en catalog/clips.json. La clave de cada clip es el slug de Twitch (el nombre sin "_source", sin " (1)"),
 así que el mismo clip descargado dos veces es la misma entrada.
+La columna "pts" de list es el puntaje automático (0-100): se calcula cada vez con las kills, su ritmo, el tipo de kill
+(kill_types) y la reacción (reaction), que `import` guarda de kf_conf.json y reactions.json. El rating a mano no se toca.
 Clips de antes del 27/09/2023 se marcan era=csgo (HUD viejo de CS:GO): no se usan en los edits.
 """
 import os, sys, re, json, subprocess, importlib.util, io, contextlib
@@ -72,15 +75,10 @@ MAPS = {'MIRAGE', 'DUST2', 'DUST 2', 'INFERNO', 'NUKE', 'ANCIENT', 'ANUBIS', 'VE
 
 def plan_info(project):
     """(clips usados, {clip: (título, subtítulo)}) leídos del plan, si hay plan."""
-    p = os.path.join(project, 'plan.py')
-    if not os.path.exists(p): return set(), {}
+    import project as _project
+    if not _project.has_plan(project): return set(), {}
     try:
-        spec = importlib.util.spec_from_file_location('plan_cat', p)
-        cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-        m = importlib.util.module_from_spec(spec)
-        with contextlib.redirect_stdout(io.StringIO()):
-            spec.loader.exec_module(m)
-        os.chdir(cwd)
+        m = _project.load_plan(project, quiet=True)
         caps = {}
         for P in list(m.ACT1) + list(m.ACT2):
             if not P.get('cap'): continue
@@ -112,11 +110,20 @@ def cmd_import(project):
     shp = os.path.join(project, 'shots.json')
     sh = json.load(open(shp)) if os.path.exists(shp) else {}
     used, caps = plan_info(project); n = 0
+    import score as SC
+    def opt(f):
+        f = os.path.join(project, f)
+        return json.load(open(f, encoding='utf-8')) if os.path.exists(f) else {}
+    kc, rs = opt('kf_conf.json'), opt('reactions.json')
     for c, f in cm.items():
         k = slug(f)
         e = db.setdefault(k, new_entry(f))
         if str(c) in kf:
             e['kills'] = kf[str(c)]; e['shots'] = sh.get(str(c)); e['verified'] = True; n += 1
+            if str(c) in kc:              # tipo de cada kill (íconos del killfeed), alineado con kills
+                e['kill_types'] = SC.types_for(e['kills'], kc[str(c)].get('kills', []))
+            elif len(e.get('kill_types') or []) != len(e['kills']): e.pop('kill_types', None)
+            if SC.best_reaction(rs.get(str(c))): e['reaction'] = SC.best_reaction(rs[str(c)])
         if c in used and name not in [u['project'] for u in e['used_in']]:
             e['used_in'].append(dict(project=name, clip=f'c{c}'))
         if c in caps:                     # el título de la play ya dice qué es: ACE/4K/clutch y arma o mapa
@@ -180,11 +187,14 @@ def cmd_set(q, pairs):
 
 
 def cmd_list(args):
+    import score as SC
     db = load(); rows = []
     def opt(name):
         return args[args.index(name) + 1].lower() if name in args else None
     minr = int(opt('--min-rating') or 0); tag = opt('--tag'); wp = opt('--weapon'); mp = opt('--map')
-    for k, e in sorted(db.items(), key=lambda kv: (-kv[1].get('rating', 0), kv[0])):
+    by_score = opt('--sort') == 'score'
+    pts = {k: SC.score(e)['score'] if e.get('kills') else 0 for k, e in db.items()}
+    for k, e in sorted(db.items(), key=lambda kv: (-pts[kv[0]] if by_score else -kv[1].get('rating', 0), kv[0])):
         if e['era'] == 'csgo' and '--all' not in args: continue
         if '--unused' in args and e['used_in']: continue
         if e.get('rating', 0) < minr: continue
@@ -192,11 +202,11 @@ def cmd_list(args):
         if wp and wp not in e.get('weapon', '').lower(): continue
         if mp and mp not in e.get('map', '').lower(): continue
         nk = len(e['kills']) if e.get('kills') is not None else '?'
-        rows.append((e.get('rating', 0), nk, 'sí' if e.get('verified') else 'no', e.get('weapon', ''), e.get('map', ''),
+        rows.append((pts[k] if e.get('kills') else '-', e.get('rating', 0), nk, 'sí' if e.get('verified') else 'no', e.get('weapon', ''), e.get('map', ''),
                      ','.join(e.get('tags', [])), ','.join(u['project'] for u in e['used_in']), k[:48]))
-    print(f'{"★":>2} {"K":>2} {"verif":5} {"arma":10} {"mapa":9} {"tags":18} {"usado en":28} clip')
+    print(f'{"pts":>3} {"★":>2} {"K":>2} {"verif":5} {"arma":10} {"mapa":9} {"tags":18} {"usado en":28} clip')
     for r in rows:
-        print(f'{r[0]:>2} {r[1]:>2} {r[2]:5} {r[3][:10]:10} {r[4][:9]:9} {r[5][:18]:18} {r[6][:28]:28} {r[7]}')
+        print(f'{r[0]:>3} {r[1]:>2} {r[2]:>2} {r[3]:5} {r[4][:10]:10} {r[5][:9]:9} {r[6][:18]:18} {r[7][:28]:28} {r[8]}')
     print(f'{len(rows)} clips')
 
 

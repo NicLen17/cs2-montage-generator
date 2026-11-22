@@ -7,7 +7,7 @@ description: "Analiza un edit de referencia DESCARGADO (archivo de video adjunto
 
 Usá este skill cuando el usuario adjunta un edit que le gustó y pide "aprendé este estilo" o "hacé uno así con mis clips". El resultado tiene dos partes: un **perfil de estilo** escrito y medido, y después el **montaje** con los clips del usuario siguiendo ese perfil. Para todo lo que el perfil no defina (detección de kills, visibilidad de cada kill, render, entrega), seguí `cs2-edit` del proyecto.
 
-Corre **en esta PC**, dentro del proyecto `wako-edits`. Todo lo de la referencia va en `projects/<nombre>/ref/` (el mismo proyecto del montaje nuevo). El análisis usa Python local (`numpy`, `opencv`, `librosa`, ya instalados) y ffmpeg.
+Corre **en esta PC**, dentro del repo del proyecto. Todo lo de la referencia va en `projects/<nombre>/ref/` (el mismo proyecto del montaje nuevo). El análisis usa Python local (`numpy`, `opencv`, `librosa`, ya instalados) y ffmpeg.
 
 ## 1. Conseguir la referencia (siempre un archivo)
 - **La referencia tiene que ser un video descargado:** adjunto en el chat, en `entrada/` o en una carpeta que nombre el usuario. Copialo a `projects/<nombre>/ref/ref.mp4` (nunca muevas el original).
@@ -36,7 +36,7 @@ Escribí `ref/style.md` (para el usuario) y `ref/style.json` (parámetros para e
 Mostrale el resumen al usuario antes de editar si el estilo es muy distinto al propio; si es parecido, seguí y contale después.
 
 ### Formato de `style.json`
-Usá estas claves. `plan` son variables que `plan.py` ya entiende y se copian tal cual; `motor_nuevo` son cosas que el motor **todavía no lee** y requieren el paso de §4.
+Usá estas claves. `plan` son valores que el motor ya entiende: van al **preset del estilo** (`presets/<estilo>/preset.json`, ver `docs/presets.md`) o al `edit.json` del proyecto, según la tabla de §4; `motor_nuevo` son cosas que el motor **todavía no lee** y requieren el paso de §4.
 ```json
 {
   "resumen": "cortes cada 0.9 s en el bombo, whip y zoom alternados, destello corto en cada kill, color frío",
@@ -69,13 +69,13 @@ Usá estas claves. `plan` son variables que `plan.py` ya entiende y se copian ta
 
 ## 4. Recrear con los clips del usuario
 - Armá el proyecto como en `cs2-edit`: catálogo, análisis de la canción y de los clips, detección y verificación de kills y los **mínimos de visibilidad de cada kill**, que valen en cualquier estilo.
-- Copiá las claves de `style.json["plan"]` a `plan.py` **reemplazando la línea donde cada variable ya está definida** (`BT`, `KILL_FX`, `LEAD_PLUS`, `END_LEN`…). No las agregues al final: `plan.py` las usa a mitad del archivo (`BT` arma las transiciones, `LEAD_PLUS` entra en `schedule()`), así que un valor puesto al final no cambia nada. Si una variable aparece varias veces (en `my_jealousy_v3`, `LEAD_PLUS` se reasigna justo antes de `schedule(ACT1, ...)`), cambiá la asignación que queda inmediatamente antes de usarse. `FRANTIC` va junto a las demás constantes de arriba.
-- **`motor_nuevo`:** implementá cada cosa en `engine/render.py` como una función nueva **que se active solo si el plan define la variable** (por ejemplo `GRADE = {...}` o un nombre nuevo en `KILL_FX`), leída con `globals().get('GRADE')`, para que los proyectos viejos den exactamente el mismo resultado. Revisala en preview antes de usarla en todo el video. Leé antes `.claude/skills/cs2-edit/references/motor.md`. Cambiar `render.py` invalida la caché de pedazos: el primer render después tarda el tiempo completo.
+- **El estilo va a un preset, no al código ni al plan:** creá `presets/<estilo>/preset.json` (solo lo que cambia respecto de `presets/default.json`) y usalo en el proyecto con `"preset": "<estilo>"` en `edit.json`. `BT` → `transitions.rotation`; `KILL_FX` → `kill_fx.rotation`; `END_LEN` / `OUTRO_LEN` → `cuts.close_len` / `cuts.outro_len`; fuerza de transiciones y efectos → `transitions.intensity`, `kill_fx.intensity`, `kill_fx.decay`; color medido (contraste, saturación, nitidez, bloom, viñeta) → `look`. Lo que es de ese edit y no del estilo va en `edit.json`: `LEAD_PLUS` → `lead_plus`, `FRANTIC` → `song.frantic`. `python engine/preset.py <estilo>` muestra el preset mezclado y avisa de claves mal escritas.
+- **`motor_nuevo`:** implementá cada cosa en `engine/render.py` (y su gemela en `engine/gpu.py` si es una operación de imagen: ver `docs/extender.md`) **apagada por defecto**, con su clave nueva en `presets/default.json`, para que los demás edits no cambien. Verificá con `python engine/regress.py projects/my_jealousy_v3` (99 dB en CPU) antes de seguir.
 - **Previews lado a lado:** un cuadro de la referencia y uno del edit nuevo en el mismo momento del patrón (transición, kill, color) para comparar. Ajustá hasta que se parezcan.
 - Render (`engine/build.py`, en segundo plano), verificación (`check_render.txt`) y entrega en `output/<nombre>/` como en `cs2-edit`.
 
 ## 5. Guardar el estilo
-Al terminar, ofrecé guardar el perfil como un skill propio del proyecto en `.claude/skills/cs2-edit-<nombre-del-estilo>/SKILL.md`, con `style.json` copiado al lado, para pedirlo después por nombre. El skill nuevo describe solo lo que cambia respecto de `cs2-edit` y le delega todo lo demás. Crealo solo si el usuario dice que sí.
+El estilo ya quedó guardado como preset (`presets/<estilo>/`, con una imagen `muestra.jpg`): cualquier proyecto lo usa con `"preset": "<estilo>"`. Si además trae reglas de edición que un preset no expresa (ritmo de cortes, cuándo usar cada transición), ofrecé guardarlas como un skill propio del proyecto en `.claude/skills/cs2-edit-<nombre-del-estilo>/SKILL.md`, con `style.json` copiado al lado. El skill nuevo describe solo lo que cambia respecto de `cs2-edit` y nombra su preset.
 
 ## 6. Respuesta
 Resumí en pocas líneas qué define el estilo, qué se replicó, qué se adaptó y por qué (por ejemplo la letra), y qué conviene revisar.

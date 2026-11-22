@@ -23,8 +23,9 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    `python engine/analyze_clips.py projects/<nombre> --shots` y
    `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo) y
    `python engine/reactions.py projects/<nombre> --all` (festejos grupales al final de cada play, con Demucs; ver skill §8).
-4. Escribir `projects/<nombre>/plan.py` copiando `projects/my_jealousy_v3/plan.py` y cambiando solo los datos
-   (leer antes `.claude/skills/cs2-edit/references/plan.md`). Correr `python projects/<nombre>/plan.py` y revisar residuos y avisos.
+4. Escribir `projects/<nombre>/edit.json` (leer antes `.claude/skills/cs2-edit/references/plan.md`): partir de
+   `python engine/auto.py projects/<nombre> --plan-only` o de `projects/my_jealousy_v3/edit.json` y aplicar las reglas del skill.
+   Correr `python engine/planner.py projects/<nombre>` y revisar residuos y avisos. (Los proyectos viejos siguen con su `plan.py`.)
 5. `python engine/check_kills.py projects/<nombre>` → sin problemas, sin avisos de TIEMPO MUERTO sin justificar y con
    los avisos del KILLFEED revisados (kills que el killfeed muestra y no están en `kf.json`).
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
@@ -94,6 +95,35 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 - **Audio:** la mezcla decodifica todos los archivos con una sola llamada a ffmpeg (~12 s; antes ~40 s: abrir ffmpeg
   cuesta ~0.5 s en Windows y se abría ~50 veces).
 - Si un render falla por memoria, bajar `--workers`.
+
+## Presets y edit.json (motor abierto a otros canales, 21/11/2026)
+- **El estilo del canal es un preset**, no constantes en el código: `presets/default.json` (todas las claves) ←
+  `presets/wako/` (este canal: nombre, link y logo; local, no va al repo) ← `"style"` del proyecto. El preset del canal se
+  elige en `config.json` (`{"preset": "wako"}`). Ver `docs/presets.md` y `python engine/preset.py`.
+- **Un edit puede ser datos**: `projects/<nombre>/edit.json` (formato en `docs/edit-json.md`); el timeline lo arma
+  `engine/planner.py`. Los proyectos con `plan.py` siguen andando igual (`engine/project.py` carga cualquiera de los dos;
+  si están los dos manda `edit.json`). `python engine/migrate.py projects/<nombre>` pasa un plan viejo y comprueba que dé lo mismo.
+- **Canción (Fase 2):** `analyze_song.py` deja además `song.json` (tempo por tramo si la canción cambia de tempo, energía por
+  sección, sugerencia de arranque y de los dos drops, y `sync`: los momentos que entran solos como SYNC cuando `edit.json`
+  no trae `song.sync`; aciertan el beat exacto 4 de cada 5 veces, así que `check_kills.py` los muestra como avisos y hay que
+  confirmarlos a oído) y `vocal_hits.json`. `python engine/words.py projects/<nombre>` (opcional, faster-whisper) da el
+  tiempo de cada palabra para ubicar golpes de voz; **no** detecta sílabas recortadas y nunca se usa para poner letra en pantalla.
+- **Sin Claude:** `python engine/auto.py <carpeta o proyecto>` arma `edit.json` solo (puntaje de plays de `engine/score.py`) y
+  renderiza un borrador; `python engine/ui/server.py` abre el editor web local (kills, línea de tiempo, estilo, render paso a
+  paso con `status.json`). Son puntos de partida: el flujo de las skills sigue siendo el de mejor resultado.
+- **Detector (Fase 3):** `shots_conf.json` marca los disparos no encontrados (`sheets/disparos_dudosos.jpg`), `kf_conf.json`
+  trae el tipo de kill, `python engine/catalog.py list --sort score` ordena por puntaje y `channel.player` del preset fija el
+  nick. `python engine/doctor.py` diagnostica la instalación.
+- **Varias canciones en un edit (megamix, 22/11/2026):** `python engine/mixtape.py projects/<nombre>` lee `mix.json` (tramos
+  `[a, b)` de la canción de otros proyectos ya analizados, cada uno con sus momentos fuertes) y deja en el proyecto una sola
+  `song.mp3` con fundidos, sus beats (`grid.npy`, `hits.npy`) y `song.json` con `mix` (dónde empieza cada canción). El resto
+  del motor no cambia. Cada sección empieza unos beats antes de su drop: el cambio de canción lleva `"tin": "mega"` y una
+  play rápida anclada (`kill_at`) en ese drop. `projects/megamix/` tiene los scripts que arman el pool de plays desde todos
+  los edits anteriores (`setup_pool.py`), encajan las plays entre anclas (`build_plan.py`) y corrigen contra `check_kills.py`
+  (`fix_loop.py`).
+- **Antes y después de tocar el motor:** `python -m pytest` (rápido) y `python engine/regress.py projects/my_jealousy_v3`
+  (imagen contra la referencia; `--device gpu` y `--cross` para CPU vs GPU). `python -m pytest --slow` suma el detector de
+  kills (F1 contra el catálogo) y la regresión de imagen.
 
 ## Reglas
 - Las preferencias del usuario están en el skill (reglas de corte, efectos, texto, audio). No las cambies sin que lo pida.

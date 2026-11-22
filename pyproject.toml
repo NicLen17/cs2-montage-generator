@@ -1,0 +1,43 @@
+# Dependencias del motor. No hay nada para "instalar" como paquete: los scripts se corren como
+# `python engine/<script>.py`. Este archivo declara qué librerías hacen falta y los extras opcionales:
+#
+#     pip install -e ".[gpu]"            base + render en la placa
+#     pip install -e ".[gpu,demucs,dev]" lo que usa el flujo completo y las pruebas
+#
+# El camino normal es el instalador (install.ps1 / install.sh), que usa las versiones fijadas de requirements.txt
+# (el conjunto probado). Acá van los mínimos aceptados: mantené los dos archivos de acuerdo.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cs2-montage-generator"
+version = "0.1.0"
+description = "Motor local para armar y renderizar montajes de CS2 con música (GPU o CPU)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "opencv-python>=4.10",
+    "pillow>=11.0",
+    "librosa>=0.11",
+    "soundfile>=0.13",
+]
+
+[project.optional-dependencies]
+# render en la placa (OpenGL 4.3); sin esto, modo CPU
+gpu = ["moderngl>=5.12"]
+# separar voz y música. PyTorch viene como dependencia: para elegir la variante (CUDA / CPU) instalalo antes,
+# como hace el instalador
+demucs = ["demucs>=4.1"]
+# transcribir la voz de la canción (opcional)
+whisper = ["faster-whisper>=1.1"]
+# editor web local
+ui = ["fastapi>=0.115", "uvicorn>=0.32"]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+# engine/ no es un paquete: no se empaqueta ningún módulo
+py-modules = []
