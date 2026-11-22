@@ -48,7 +48,7 @@ Además arma las miniaturas en tres estilos, basados en las más vistas de canal
 ## Cómo se usa
 
 ```bash
-git clone https://github.com/NicLen17/wako-edits.git
+git clone https://github.com/NicLen17/cs2-montage-generator.git
 ```
 
 **Instalá** con `install.ps1` en Windows (o doble clic en `setup_windows.bat`) o `./install.sh` en Linux y macOS: arma el
