@@ -11,7 +11,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wako-edits"
+name = "cs2-montage-generator"
 version = "0.1.0"
 description = "Motor local para armar y renderizar montajes de CS2 con música (GPU o CPU)."
 readme = "README.md"

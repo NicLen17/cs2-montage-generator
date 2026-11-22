@@ -6,6 +6,9 @@
 Si están los dos, manda edit.json. Los dos caminos devuelven un objeto con los mismos nombres (segments, kills,
 captions, boundaries, TOTAL, ACT1, ACT2, ...), así el resto del motor no sabe de dónde salió.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import contextlib, importlib.util, io, json, os, sys
 
 ENGINE = os.path.dirname(os.path.abspath(__file__))

@@ -1,3 +1,6 @@
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import os, sys
 PROJECT = os.path.abspath(sys.argv[1]); ENGINE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT); os.chdir(PROJECT)
@@ -13,7 +16,7 @@ _A = _preset.for_globals(globals())['audio']           # valores de fábrica: pr
 SR = 48000
 # Mezcla 2 (20/11/2026, pedido del usuario: "los tiros y headshots siguen muy bajos, la música predomina demasiado").
 # AUDIO_MIX = 1 en el plan vuelve a la mezcla vieja. Los valores se pueden subir desde el plan; no se bajan sin pedido.
-MIX = int(os.environ.get('WAKO_AUDIO_MIX', globals().get('AUDIO_MIX', _A['mix'])))
+MIX = int(os.environ.get('MONTAGE_AUDIO_MIX', globals().get('AUDIO_MIX', _A['mix'])))
 GAME_GAIN = globals().get('GAME_GAIN', 0.78 if MIX == 1 else _A['game_gain'])       # juego en las plays (en el cierre: 0.40 / 0.55)
 GAME_EMPH = globals().get('GAME_EMPH', 1.7 if MIX == 1 else _A['game_emph'])        # realce de cada tiro y headshot
 MUSIC_DUCK = globals().get('MUSIC_DUCK', 0.42 if MIX == 1 else _A['music_duck'])    # cuánto se aparta la música en cada tiro
@@ -25,7 +28,7 @@ REACT_DUCK = globals().get('REACT_DUCK', _A['react_duck'])                      
 REACT_HOLD = globals().get('REACT_HOLD', _A['react_hold'])                           # la música sigue baja este tiempo después del grito
 REACT_RELEASE = globals().get('REACT_RELEASE', _A['react_release'])                     # y vuelve a su nivel en este tiempo (curva suave)
 REACT_KINDS = globals().get('REACT_KINDS', tuple(_A['react_kinds']))                 # solo reacciones grupales (pedido del 20/11/2026)
-OUT_WAV = os.environ.get('WAKO_AUDIO_OUT', 'work_audio.wav')
+OUT_WAV = os.environ.get('MONTAGE_AUDIO_OUT', 'work_audio.wav')
 LUFS_TARGET = _A['loudness']['target_lufs']       # None: tan fuerte como deje el pico (el sonido de siempre, ~-10 LUFS)
 TP_LIMIT = float(_A['loudness']['true_peak'])     # techo del pico real, en dBTP
 
@@ -48,7 +51,7 @@ def decode_all(paths):
     import tempfile, shutil
     paths = [p for p in dict.fromkeys(paths) if p not in _DEC and os.path.exists(p)]
     if not paths: return
-    tmp = tempfile.mkdtemp(prefix='wako_audio_')
+    tmp = tempfile.mkdtemp(prefix='montage_audio_')
     try:
         cmd = ['ffmpeg', '-v', 'error', '-y']
         for p in paths: cmd += ['-i', p]
@@ -139,7 +142,7 @@ if MIX >= 2 and play_mask.any():
     # las canciones vienen masterizadas muy fuerte y el audio de Twitch no: con una ganancia fija el juego quedaba
     # 15 dB debajo de la música. Se nivela contra la música de este video: el juego queda GAME_VS_MUSIC dB debajo
     # (antes del realce de los tiros, que lo pasa por encima en cada disparo).
-    GAME_VS_MUSIC = float(os.environ.get('WAKO_GAME_VS_MUSIC', globals().get('GAME_VS_MUSIC', _A['game_vs_music'])))
+    GAME_VS_MUSIC = float(os.environ.get('MONTAGE_GAME_VS_MUSIC', globals().get('GAME_VS_MUSIC', _A['game_vs_music'])))
     cur = _db(game.mean(axis=1)[play_mask]) - _db(song.mean(axis=1)[play_mask] * MUSIC_BED)
     game_lift = float(np.clip(10 ** ((GAME_VS_MUSIC - cur) / 20), 1.0, 6.0))
     game *= game_lift
@@ -271,7 +274,7 @@ else:
     # el AAC del video final agrega ~1.5 dB de pico en los tiros: se codifica una prueba, se mide y se corrige
     import tempfile, re
     for _ in range(2):
-        tmp = os.path.join(tempfile.gettempdir(), f'wako_tp_{os.getpid()}.m4a')
+        tmp = os.path.join(tempfile.gettempdir(), f'montage_tp_{os.getpid()}.m4a')
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', '-c:a', 'aac', '-b:a', '320k', tmp],
                        input=(mix * 32767).astype(np.int16).tobytes())
         r = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-i', tmp, '-af', 'ebur128=peak=true', '-f', 'null', '-'],
@@ -301,7 +304,7 @@ if sh:
     lines.append(f'tiro de cada kill sobre la música: mediana {np.median(sh):+.1f} dB, el más bajo {sh.min():+.1f} dB ({len(sh)} kills)')
 lines += [f'loudness: {_lufs(mix):.1f} LUFS' + (f' (objetivo {LUFS_TARGET:g})' if LUFS_TARGET is not None else ' (sin objetivo: lo que deja el pico)')]
 lines += [f'reacciones resaltadas: {sum("->" in r for r in rlog)}'] + ['  ' + r for r in rlog]
-open(os.environ.get('WAKO_AUDIO_LOG', 'audio_balance.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+open(os.environ.get('MONTAGE_AUDIO_LOG', 'audio_balance.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 try: sys.stdout.reconfigure(encoding='utf-8')
 except Exception: pass
 print('\n'.join(lines))

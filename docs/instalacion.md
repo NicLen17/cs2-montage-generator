@@ -110,7 +110,7 @@ no se puede renderizar · `[ - ]` opcional, no instalado.
 | Placa de video | El nombre que devuelve el driver de OpenGL (el mismo que usa el render). Si OpenGL no anda, el que informa el sistema. | Informativo. |
 | OpenGL 4.3 | Crea de verdad el contexto que usa el modo GPU (`engine/gpu.py`); en Linux sin pantalla prueba EGL. | Modo CPU. Actualizar el driver de video; `pip install moderngl`. |
 | ffmpeg, ffprobe | Que estén en el PATH, y la versión. | **Imprescindible.** |
-| Codificadores de video | Prueba real de 1 cuadro con cada uno: `amf`, `nvenc`, `qsv`, `videotoolbox`, `vaapi`; `x264` (procesador) siempre queda de respaldo. Dice cuál se usa. | Solo `x264`: se codifica con el procesador. Forzar uno: variable `WAKO_ENCODER`. |
+| Codificadores de video | Prueba real de 1 cuadro con cada uno: `amf`, `nvenc`, `qsv`, `videotoolbox`, `vaapi`; `x264` (procesador) siempre queda de respaldo. Dice cuál se usa. | Solo `x264`: se codifica con el procesador. Forzar uno: variable `MONTAGE_ENCODER`. |
 | Decodificación por hardware | Decodifica de verdad un video de prueba con cada acelerador de ffmpeg (d3d11va, dxva2, cuda, qsv, vaapi, videotoolbox). | Los clips se leen con el procesador (más lento en modo GPU). |
 | Librerías de Python | Las de `requirements.txt`. | **Imprescindible** (salvo `moderngl`, que solo hace falta para el modo GPU). |
 | Versiones | Aparece solo si alguna librería no es la versión fijada. | Suele andar igual. |
@@ -123,8 +123,8 @@ Al final dice el **modo de render** (GPU o CPU), el codificador y un **tiempo es
 sale de una sola medición (un edit de 2:22 a 1080p60 con Ryzen 5 7600X + RX 7900 XT: 55 s en GPU, 281 s en CPU):
 no se ajusta a tu hardware, es una referencia.
 
-Variables útiles: `WAKO_DEVICE=cpu|gpu|auto` (igual que `--device` de `build.py`), `WAKO_ENCODER=amf|nvenc|qsv|videotoolbox|vaapi|x264`,
-`WAKO_VAAPI_DEVICE=/dev/dri/renderD129` (otra placa para VAAPI).
+Variables útiles: `MONTAGE_DEVICE=cpu|gpu|auto` (igual que `--device` de `build.py`), `MONTAGE_ENCODER=amf|nvenc|qsv|videotoolbox|vaapi|x264`,
+`MONTAGE_VAAPI_DEVICE=/dev/dri/renderD129` (otra placa para VAAPI).
 
 ## Qué está probado y qué no
 
@@ -135,7 +135,7 @@ en otra combinación, contá cómo te fue (la salida de `python engine/doctor.py
 | Combinación | Render | Codificador | Estado |
 |---|---|---|---|
 | Windows 11 + AMD Radeon | GPU (OpenGL 4.3) | AMF | **Probado**: instalador, `doctor`, render y regresión de imagen |
-| Windows, sin usar la placa (`--device cpu`, `WAKO_ENCODER=x264`) | CPU | libx264 | **Probado** en la misma PC |
+| Windows, sin usar la placa (`--device cpu`, `MONTAGE_ENCODER=x264`) | CPU | libx264 | **Probado** en la misma PC |
 | Windows + NVIDIA | GPU | NVENC | Implementado, sin probar (incluye PyTorch con CUDA para Demucs) |
 | Windows + Intel (Arc / integrada) | GPU | QSV | Implementado, sin probar |
 | Linux + NVIDIA | GPU (X11 o EGL) | NVENC | Implementado, sin probar |
@@ -156,9 +156,9 @@ Docker en Windows y en macOS no le pasa la placa de video al contenedor, así qu
 usá el instalador.
 
 ```bash
-docker build -t wako-edits .
-docker run --rm wako-edits                                                    # diagnóstico
-docker run --rm -v "${PWD}:/app" wako-edits python engine/build.py projects/<nombre>
+docker build -t cs2-montage .
+docker run --rm cs2-montage                                                    # diagnóstico
+docker run --rm -v "${PWD}:/app" cs2-montage python engine/build.py projects/<nombre>
 ```
 
 Con una placa NVIDIA en Linux y `nvidia-container-toolkit` se puede usar la GPU dentro del contenedor (sin probar):

@@ -12,6 +12,9 @@ Cómo reparte el trabajo: N procesos de render.py quedan vivos (cargan clips, fu
 pedazos de 2 s de una cola, los más pesados primero (transiciones, kills, textos), así ningún núcleo queda parado al final.
 Cada pedazo sale ya con la calidad final y se unen sin recodificar el video.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import argparse, os, sys, subprocess, time, json, hashlib, shutil, importlib.util, threading, queue
 from concurrent.futures import ThreadPoolExecutor
 
@@ -67,8 +70,8 @@ def slowmo_rife(exe, src, t0, dur, out):
         n = len(os.listdir(os.path.join(tmp, 'in')))
         cmd = [exe, '-i', os.path.join(tmp, 'in'), '-o', os.path.join(tmp, 'out'), '-n', str(4 * n),
                '-m', os.path.join(RIFE_DIR, RIFE_MODEL), '-j', '2:4:4', '-f', '%08d.png']
-        if os.environ.get('WAKO_RIFE_GPU'):         # por defecto RIFE elige la placa dedicada
-            cmd += ['-g', os.environ['WAKO_RIFE_GPU']]
+        if os.environ.get('MONTAGE_RIFE_GPU'):         # por defecto RIFE elige la placa dedicada
+            cmd += ['-g', os.environ['MONTAGE_RIFE_GPU']]
         run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         run(['ffmpeg', '-v', 'error', '-y', '-framerate', '240', '-i', os.path.join(tmp, 'out', '%08d.png'),
              *video_encoder_args('intermediate'), out])
@@ -207,7 +210,7 @@ def _audio_key(project):
         if os.path.exists(p):
             h.update(open(p, 'rb').read())
     for k in sorted(os.environ):
-        if k.startswith('WAKO_AUDIO'):
+        if k.startswith('MONTAGE_AUDIO'):
             h.update(f'{k}={os.environ[k]}'.encode())
     for f in sorted(os.listdir(project)):
         p = os.path.join(project, f)
@@ -312,7 +315,7 @@ def _main():
     ap.add_argument('--only')
     ap.add_argument('--no-check', action='store_true', help='no correr check_render.py al terminar')
     ap.add_argument('--draft', action='store_true', help='borrador rápido 960x540 a 30 fps en projects/<nombre>/borrador.mp4')
-    ap.add_argument('--device', choices=['auto', 'gpu', 'cpu'], default=os.environ.get('WAKO_DEVICE', 'auto'),
+    ap.add_argument('--device', choices=['auto', 'gpu', 'cpu'], default=os.environ.get('MONTAGE_DEVICE', 'auto'),
                     help='dónde se procesan los cuadros: gpu (todo en la placa), cpu (todo en el procesador) o auto')
     args = ap.parse_args()
     project = os.path.abspath(args.project)
@@ -321,7 +324,7 @@ def _main():
     if args.bitrate is None: args.bitrate = int(style['output']['bitrate'])
     print('Estilo:', style['name'])
     device, gpu_name = resolve_device(args.device)
-    os.environ['WAKO_DEVICE'] = device          # los procesos de render lo heredan
+    os.environ['MONTAGE_DEVICE'] = device          # los procesos de render lo heredan
     print('Dispositivo:', f'GPU ({gpu_name})' if device == 'gpu' else 'CPU')
 
     if args.preview:
@@ -335,9 +338,9 @@ def _main():
         return
 
     t_start = time.time()
-    os.environ['WAKO_ENCODER'] = pick()       # se detecta una vez; los procesos de render lo heredan
-    print('Codificador de video:', os.environ['WAKO_ENCODER'])
-    status = STATUS[0] = Status(project, draft=bool(args.draft), device=device, gpu=gpu_name, encoder=os.environ['WAKO_ENCODER'],
+    os.environ['MONTAGE_ENCODER'] = pick()       # se detecta una vez; los procesos de render lo heredan
+    print('Codificador de video:', os.environ['MONTAGE_ENCODER'])
+    status = STATUS[0] = Status(project, draft=bool(args.draft), device=device, gpu=gpu_name, encoder=os.environ['MONTAGE_ENCODER'],
                                 style=style['name'], total_seconds=round(float(plan.TOTAL), 2))
     if getattr(plan, 'SLOWMO_SRC', None): status.update(stage='camaras_lentas')
     ensure_slowmo(project, plan)
@@ -345,7 +348,7 @@ def _main():
 
     draft = args.draft
     st, br = (2, DRAFT_BITRATE) if draft else (1, args.bitrate)
-    enc_tag = f"{os.environ['WAKO_ENCODER']}|{br}|{st}|{device}"
+    enc_tag = f"{os.environ['MONTAGE_ENCODER']}|{br}|{st}|{device}"
     N = int(round(plan.TOTAL * plan.FPS)); step = int(CHUNK_SEC * plan.FPS)
     chunks = [(a, min(N, a + step)) for a in range(0, N, step)]
     cache = os.path.join(project, 'render_cache_draft' if draft else 'render_cache'); os.makedirs(cache, exist_ok=True)

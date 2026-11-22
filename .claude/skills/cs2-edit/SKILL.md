@@ -1,12 +1,12 @@
 ---
 name: "cs2-edit"
-description: "Reglas y flujo del edit largo del proyecto wako-edits: arma, corrige y renderiza en esta PC (GPU local) montajes de CS2 estilo WAKO TV con cortes al beat, efectos de kill, transiciones con luz, intro con logo y cierre con reacción. Se carga siempre que se arma un video (también dentro de cs2-pack, que es el arranque por defecto cuando llegan clips y canción). Usala sola cuando el usuario pida solo el video largo ('solo el edit', 'sin shorts', /cs2-edit) o cambios a un edit ya hecho ('en el 1:23 no se ve la kill', 'subí el juego', 'hacé una v4'). Usala en lugar de anthropic-skills:cs2-edit."
+description: "Reglas y flujo del edit largo del proyecto CS2 Montage Generator: arma, corrige y renderiza en esta PC (GPU local) montajes de CS2 estilo WAKO TV con cortes al beat, efectos de kill, transiciones con luz, intro con logo y cierre con reacción. Se carga siempre que se arma un video (también dentro de cs2-pack, que es el arranque por defecto cuando llegan clips y canción). Usala sola cuando el usuario pida solo el video largo ('solo el edit', 'sin shorts', /cs2-edit) o cambios a un edit ya hecho ('en el 1:23 no se ve la kill', 'subí el juego', 'hacé una v4'). Usala en lugar de anthropic-skills:cs2-edit."
 ---
 
 # CS2 Edit — montaje de plays estilo WAKO TV
 
 Entrada: clips .mp4 de Twitch (1080p60, cámara del streamer arriba a la izquierda) y un archivo de audio con la canción. Salida: un MP4 1080p a 60 fps, de 2 a 3:30 según el tema, guardado en `output/<nombre>/video/`.
-Este skill corre **en la PC del usuario** con Claude Code, dentro del proyecto `wako-edits`. Cada video es una carpeta `projects/<nombre>/` (clips copiados como `clips/c1.mp4…`, `song.mp3`). Nunca muevas ni modifiques los originales del usuario. Los scripts están en `engine/` (ver CLAUDE.md).
+Este skill corre **en la PC del usuario** con Claude Code, dentro del repo del proyecto. Cada video es una carpeta `projects/<nombre>/` (clips copiados como `clips/c1.mp4…`, `song.mp3`). Nunca muevas ni modifiques los originales del usuario. Los scripts están en `engine/` (ver CLAUDE.md).
 Esta es la versión del proyecto y la única que se actualiza. La de la cuenta (`anthropic-skills:cs2-edit`) quedó congelada: no la uses.
 
 **Archivos de apoyo (leelos en el paso indicado, no antes):**

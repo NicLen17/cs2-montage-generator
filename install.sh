@@ -67,8 +67,8 @@ confirm() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# WAKO_OS=linux|macos permite simular el otro sistema con --dry-run
-case "${WAKO_OS:-$(uname -s)}" in
+# MONTAGE_OS=linux|macos permite simular el otro sistema con --dry-run
+case "${MONTAGE_OS:-$(uname -s)}" in
     Linux|linux) OS=linux ;;
     Darwin|macos) OS=macos ;;
     *) echo "Este instalador es para Linux y macOS. En Windows usá install.ps1 (o setup_windows.bat)." >&2; exit 2 ;;

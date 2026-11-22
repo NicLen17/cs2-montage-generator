@@ -9,6 +9,9 @@ Los momentos salen del plan (uno por transición, kill, título, intro, interlud
 anotados en la referencia, así un cambio en el plan no pasa por un cambio en el motor. Sale con código 1 si algún
 cuadro queda por debajo de --min-psnr (45 dB por defecto: lo que separa CPU de GPU; un cambio real da 20-35 dB).
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import argparse, json, os, shutil, subprocess, sys, tempfile
 from concurrent.futures import ThreadPoolExecutor
 
@@ -46,7 +49,7 @@ def pick_times(plan, limit):
 def render_raw(project, times, outdir, device, procs=3):
     os.makedirs(outdir, exist_ok=True)
     groups = [times[i::procs] for i in range(min(procs, len(times)))]
-    env = {**os.environ, 'WAKO_DEVICE': device}
+    env = {**os.environ, 'MONTAGE_DEVICE': device}
 
     def one(g):
         r = subprocess.run([PY, os.path.join(ENGINE, 'render.py'), project, 'raw', ','.join(f'{t:.2f}' for t in g), outdir],

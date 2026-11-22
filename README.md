@@ -1,6 +1,6 @@
 <div align="center">
 
-# WAKO Edits
+# CS2 Montage Generator
 
 **Montajes de CS2 al ritmo de la música, armados por Claude Code y renderizados en tu PC.**
 

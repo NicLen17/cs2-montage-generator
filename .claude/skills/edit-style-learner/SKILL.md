@@ -7,7 +7,7 @@ description: "Analiza un edit de referencia DESCARGADO (archivo de video adjunto
 
 Usá este skill cuando el usuario adjunta un edit que le gustó y pide "aprendé este estilo" o "hacé uno así con mis clips". El resultado tiene dos partes: un **perfil de estilo** escrito y medido, y después el **montaje** con los clips del usuario siguiendo ese perfil. Para todo lo que el perfil no defina (detección de kills, visibilidad de cada kill, render, entrega), seguí `cs2-edit` del proyecto.
 
-Corre **en esta PC**, dentro del proyecto `wako-edits`. Todo lo de la referencia va en `projects/<nombre>/ref/` (el mismo proyecto del montaje nuevo). El análisis usa Python local (`numpy`, `opencv`, `librosa`, ya instalados) y ffmpeg.
+Corre **en esta PC**, dentro del repo del proyecto. Todo lo de la referencia va en `projects/<nombre>/ref/` (el mismo proyecto del montaje nuevo). El análisis usa Python local (`numpy`, `opencv`, `librosa`, ya instalados) y ffmpeg.
 
 ## 1. Conseguir la referencia (siempre un archivo)
 - **La referencia tiene que ser un video descargado:** adjunto en el chat, en `entrada/` o en una carpeta que nombre el usuario. Copialo a `projects/<nombre>/ref/ref.mp4` (nunca muevas el original).

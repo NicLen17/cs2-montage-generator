@@ -1,3 +1,6 @@
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 PROJECT = os.path.abspath(sys.argv[1]); ENGINE = os.path.dirname(os.path.abspath(__file__))
@@ -20,10 +23,10 @@ N = int(round(TOTAL * FPS))
 REVEAL_MODE = 'far' if globals().get('REVEAL') else 'orbs'   # plan: REVEAL = True -> revelación en vez del negro con luces
 
 # ---------- dispositivo: CPU o GPU, uno u otro de punta a punta ----------
-# WAKO_DEVICE=cpu: numpy + OpenCV en el procesador. WAKO_DEVICE=gpu: todo el cuadro en la placa (engine/gpu.py, OpenGL).
+# MONTAGE_DEVICE=cpu: numpy + OpenCV en el procesador. MONTAGE_DEVICE=gpu: todo el cuadro en la placa (engine/gpu.py, OpenGL).
 # auto (por defecto): GPU si hay OpenGL 4.3 y ModernGL; si no, CPU. La lógica del edit es la misma en los dos modos:
 # solo cambian las operaciones de imagen (bloom, zoom, desenfoques, textos, luces), que gpu.py reemplaza al final.
-DEVICE = os.environ.get('WAKO_DEVICE', 'auto')
+DEVICE = os.environ.get('MONTAGE_DEVICE', 'auto')
 if DEVICE != 'cpu':
     try:
         import gpu as GP
@@ -31,7 +34,7 @@ if DEVICE != 'cpu':
         DEVICE = 'gpu'
     except Exception as e:
         if DEVICE == 'gpu':
-            raise SystemExit(f'WAKO_DEVICE=gpu pero no se pudo usar la GPU: {e}')
+            raise SystemExit(f'MONTAGE_DEVICE=gpu pero no se pudo usar la GPU: {e}')
         DEVICE = 'cpu'
 cv2.ocl.setUseOpenCL(False)        # modo CPU puro (sin OpenCL escondido)
 
@@ -94,7 +97,7 @@ class HWReader:
             if len(b) < s.fs: s.i = idx; break
             s.f = GP.NV12(b, s.w, s.h); s.i += 1
         return s.f
-RDR = HWReader if DEVICE == 'gpu' and os.environ.get('WAKO_HWDEC', '1') != '0' else Reader
+RDR = HWReader if DEVICE == 'gpu' and os.environ.get('MONTAGE_HWDEC', '1') != '0' else Reader
 class LazyRD(dict):
     """Lectores abiertos por (clip, ranura). En modo GPU cada uno es un proceso de ffmpeg: se cierran los que no se
     usan hace rato (quedan como mucho 6 abiertos)."""

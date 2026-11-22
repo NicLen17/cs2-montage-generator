@@ -1,6 +1,6 @@
 """Motor de imagen en la GPU (OpenGL 4.3 vía ModernGL): AMD, NVIDIA e Intel, Windows y Linux.
 
-render.py tiene una sola copia de la lógica del edit (qué efecto, cuánto, cuándo). Con WAKO_DEVICE=gpu reemplaza sus
+render.py tiene una sola copia de la lógica del edit (qué efecto, cuánto, cuándo). Con MONTAGE_DEVICE=gpu reemplaza sus
 operaciones de imagen por las de este módulo: el cuadro sube una vez a la VRAM, todos los efectos corren ahí como shaders
 y baja terminado en 8 bits. Las cuentas imitan a OpenCV (curva de color, HSV de 8 bits, desenfoques gaussianos con sus
 mismos tamaños de kernel, warpAffine cúbico con coordenadas de 1/32 de píxel, bordes reflejados) para que el resultado
@@ -9,6 +9,9 @@ sea el mismo que en CPU (se compara con PSNR, ver references/motor.md).
 G es una imagen en la GPU (textura RGBA float32, canales en orden BGR como en OpenCV) que se usa como un array de numpy:
 G + G, G * 0.5, 255 - G, G * np.array([b, g, r]), máscara (1 canal) * G. Cada operación es una pasada de shader.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import math
 import numpy as np
 import cv2

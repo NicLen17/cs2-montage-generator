@@ -1,7 +1,10 @@
 """Elige el codificador de video: el de la placa si existe (AMD AMF / NVIDIA NVENC / Intel QSV / Apple VideoToolbox /
 VAAPI en Linux), si no CPU (libx264). Cada uno se prueba de verdad con 1 cuadro antes de darlo por bueno.
-Forzar uno con la variable de entorno WAKO_ENCODER=amf|nvenc|qsv|videotoolbox|vaapi|x264.
-VAAPI usa el primer /dev/dri/renderD* (otro: WAKO_VAAPI_DEVICE=/dev/dri/renderD129)."""
+Forzar uno con la variable de entorno MONTAGE_ENCODER=amf|nvenc|qsv|videotoolbox|vaapi|x264.
+VAAPI usa el primer /dev/dri/renderD* (otro: MONTAGE_VAAPI_DEVICE=/dev/dri/renderD129)."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import os, sys, glob, subprocess, functools
 
 # en orden de preferencia; x264 (CPU) siempre queda al final como respaldo
@@ -12,7 +15,7 @@ NAMES = {**{key: name for name, key in HW}, 'x264': 'libx264'}
 
 def vaapi_device():
     """Nodo DRM que usa VAAPI (solo Linux), o None si no hay ninguno."""
-    dev = os.environ.get('WAKO_VAAPI_DEVICE')
+    dev = os.environ.get('MONTAGE_VAAPI_DEVICE')
     if dev:
         return dev
     devs = sorted(glob.glob('/dev/dri/renderD*'))
@@ -48,9 +51,9 @@ def _works(name):
 
 
 def pick():
-    """build.py lo detecta una vez y lo deja en WAKO_ENCODER: los procesos de render lo heredan y no vuelven a probar
+    """build.py lo detecta una vez y lo deja en MONTAGE_ENCODER: los procesos de render lo heredan y no vuelven a probar
     los codificadores (eran 2-3 s por proceso)."""
-    forced = os.environ.get('WAKO_ENCODER')
+    forced = os.environ.get('MONTAGE_ENCODER')
     if forced:
         return forced
     return available()[0]

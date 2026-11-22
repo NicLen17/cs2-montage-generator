@@ -10,7 +10,7 @@
 - Golpes vocales dobles (pares separados 0.12-0.32 s) y repeticiones de sílabas (`projects/my_jealousy_v2/vocal_reps.py`): solo para pedidos especiales (ver `plan.md`).
 
 ## Imagen (`render.py`)
-- **Dispositivo** (`WAKO_DEVICE` = `cpu` | `gpu` | `auto`, lo pone `build.py --device`): una sola lógica del edit. En GPU,
+- **Dispositivo** (`MONTAGE_DEVICE` = `cpu` | `gpu` | `auto`, lo pone `build.py --device`): una sola lógica del edit. En GPU,
   al final de `render.py` se reemplazan las operaciones de imagen por las de `engine/gpu.py` (ModernGL, OpenGL 4.3):
   `grade`, `bloom`, `streak`, `affine/zoom/shift`, `hblur`, `radial_blur`, `rgb_split`, `leak`, `ring`, `blit`, `darken`,
   `logo_ring`, `paste_avatar`, `orbs` y las ayudas `clip`, `chmean`, `zeros`, `center_mean`, `to_u8`. `gpu.G` es una imagen en
@@ -21,13 +21,13 @@
   - **Regla para efectos nuevos:** escribí la versión numpy en `render.py` usando solo las ayudas (`clip`, `chmean`, `zeros`,
     nada de `f *=` sobre el cuadro de otro, nada de `f[a:b] = ...` fuera de `blit/darken/paste_avatar`) y, si usa una
     operación de OpenCV nueva, su shader en `gpu.py`. Compará los dos modos con `render.py <proyecto> raw t1,t2,... <carpeta>`
-    con `WAKO_DEVICE=cpu` y `WAKO_DEVICE=gpu` (PSNR ≥ 45 dB en los cuadros del efecto).
+    con `MONTAGE_DEVICE=cpu` y `MONTAGE_DEVICE=gpu` (PSNR ≥ 45 dB en los cuadros del efecto).
   - **Lectura de clips en GPU (`HWReader`):** ffmpeg con `-hwaccel auto -fps_mode passthrough -pix_fmt nv12` (sin
     `passthrough` ffmpeg duplica cuadros en los clips con marcas de tiempo irregulares), salto con `-ss (idx-0.5)/fps`.
     El color se pasa a BGR en el shader `grade` con la cuenta exacta de swscale (BT.601 rango limitado, croma del vecino,
     punto fijo: `yv=((Y*8-128)*9539)>>16`, coeficientes 16525 / -3209 / -6660 / 13074). Verificado contra OpenCV en
     188 clips (1128 cuadros, saltos incluidos): idénticos. Quedan como mucho 6 lectores abiertos por proceso.
-    `WAKO_HWDEC=0` vuelve a leer con OpenCV.
+    `MONTAGE_HWDEC=0` vuelve a leer con OpenCV.
   - Salida en GPU: `to_nv12()` (BT.601 rango limitado, croma promedio 2x2) → el codificador de la placa la toma sin
     conversión en la CPU.
 - Medido en my_jealousy_v3: motor viejo 330 s · CPU 281 s · GPU 55 s (6 procesos; 3 → 73 s, 4 → 62 s). Un proceso GPU hace
@@ -56,7 +56,7 @@
 - **Mega:** punch-in a 1.6x con desenfoque radial, separación RGB de 24 px, luz horizontal, destello blanco solo en el centro (±7 %) y B que sale de la luz. Whoosh y golpe grave en el audio.
 - **Efectos de kill** (`KILL_FX` rota): `bloom`, `chroma_zoom`, `shake_blur`, `flash`, `radial_zoom`, `pop`. Decaimiento entre 0.11 y 0.2 s, rampa de entrada de ~3 cuadros, sacudida como oscilación suave (nunca ruido por cuadro).
 - **Flashing light:** destello de 0.22, bloom de 0.5, luz horizontal **normalizada** (dividir por `max*1.6` y multiplicar por 120, nunca por 255) y un anillo.
-- **Cámara lenta (x4, 60 → 240 fps) sobre una ventana corta, desaturación leve.** Con RIFE instalado (`tools/rife/`, `python engine/setup_rife.py`): `rife-ncnn-vulkan -n 4N -m rife-v4.6 -j 2:4:4` en la GPU sobre los cuadros extraídos con `-fps_mode passthrough`; cada 4.º cuadro es el original exacto, ~10 s por cámara lenta (medido en my_jealousy c26). Sin RIFE: `minterpolate=fps=240:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` (CPU, ~70 s por segundo). `WAKO_RIFE_GPU=N` elige la placa si hay varias.
+- **Cámara lenta (x4, 60 → 240 fps) sobre una ventana corta, desaturación leve.** Con RIFE instalado (`tools/rife/`, `python engine/setup_rife.py`): `rife-ncnn-vulkan -n 4N -m rife-v4.6 -j 2:4:4` en la GPU sobre los cuadros extraídos con `-fps_mode passthrough`; cada 4.º cuadro es el original exacto, ~10 s por cámara lenta (medido en my_jealousy c26). Sin RIFE: `minterpolate=fps=240:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` (CPU, ~70 s por segundo). `MONTAGE_RIFE_GPU=N` elige la placa si hay varias.
 - **Títulos:** Montserrat 800 de 54 px más subtítulo Montserrat 300 de 24 px, en `y = H−205`, 1.5 s con fade y sombra suave.
 - Encoder elegido por `encoders.py` (AMF en la RX 7900 XT). Salida final 30 Mbps, AAC 320k.
 
@@ -74,4 +74,4 @@
 - **Balance:** `audio_balance.txt` = dB(juego+reacciones) − dB(música) en las plays, y por kill el pico de 10 ms del juego contra el de la música en `[kill − 30 ms, kill + 150 ms]`. Mezcla 1 en my_jealousy_v3: −15.5 / −19.1 dB; prueba "muy alta": −3.4 / −1.9 dB; mezcla 2 actual (punto medio): −9.5 / −7.9 dB.
 - Whoosh paneado de izquierda a derecha en cada whip, shimmer agudo en las de luz, whoosh en el zoom de apertura y en el de cierre.
 - Fundido de entrada de la música de 0.8 s, de salida durante el cierre. Saturación suave con `tanh`, unos −10 LUFS integrados.
-- Pruebas sin tocar el proyecto: `WAKO_AUDIO_MIX=1|2`, `WAKO_GAME_VS_MUSIC=<dB>`, `WAKO_AUDIO_OUT=<wav>` y `WAKO_AUDIO_LOG=<txt>` como variables de entorno de `audio.py`.
+- Pruebas sin tocar el proyecto: `MONTAGE_AUDIO_MIX=1|2`, `MONTAGE_GAME_VS_MUSIC=<dB>`, `MONTAGE_AUDIO_OUT=<wav>` y `MONTAGE_AUDIO_LOG=<txt>` como variables de entorno de `audio.py`.

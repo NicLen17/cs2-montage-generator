@@ -7,6 +7,9 @@ Sale con 0 si se puede renderizar (aunque falten cosas opcionales) y con 1 si fa
 No instala ni cambia nada: solo mira. Lo corren los instaladores al terminar (install.ps1 / install.sh).
 Qué significa cada línea: docs/instalacion.md.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import compat  # noqa: F401  (nombres viejos de las variables de entorno)
 import argparse, glob, json, os, platform, re, shutil, subprocess, sys, tempfile
 from concurrent.futures import ThreadPoolExecutor
 from importlib import metadata
@@ -190,9 +193,9 @@ def check_encoders():
         return [check('encoders', 'Codificadores de video', MISSING, 'sin ffmpeg no se puede probar', ffmpeg_fix(), essential=True)]
     import encoders
     found = encoders.available()
-    forced = os.environ.get('WAKO_ENCODER')
+    forced = os.environ.get('MONTAGE_ENCODER')
     use = forced or found[0]
-    detail = ', '.join(f'{k} ({encoders.NAMES[k]})' for k in found) + f' -> se usa {use}' + (' (forzado con WAKO_ENCODER)' if forced else '')
+    detail = ', '.join(f'{k} ({encoders.NAMES[k]})' for k in found) + f' -> se usa {use}' + (' (forzado con MONTAGE_ENCODER)' if forced else '')
     if len(found) > 1:
         return [check('encoders', 'Codificadores de video', OK, detail)]
     listed = run(['ffmpeg', '-hide_banner', '-encoders'])[1]
@@ -347,12 +350,12 @@ def diagnose():
         checks = [c for part in ex.map(safe, groups) for c in part]
     by = {c['id']: c for c in checks}
     ok = not any(c['imprescindible'] and c['estado'] == MISSING for c in checks)
-    forced_dev = os.environ.get('WAKO_DEVICE', 'auto')
+    forced_dev = os.environ.get('MONTAGE_DEVICE', 'auto')
     mode = 'gpu' if by.get('opengl', {}).get('estado') == OK and forced_dev != 'cpu' else 'cpu'
     enc = None
     if by.get('encoders', {}).get('estado') in (OK, WARN):
         import encoders
-        enc = os.environ.get('WAKO_ENCODER') or encoders.available()[0]
+        enc = os.environ.get('MONTAGE_ENCODER') or encoders.available()[0]
     est = round(150 * SPEED[mode] / 5) * 5
     return {
         'ok': ok,
@@ -382,7 +385,7 @@ def report(d):
     e = d['estimado']
     how = (f"GPU ({d['placa']}): todo el cuadro se procesa en la placa" if d['modo'] == 'gpu'
            else 'CPU: el cuadro se procesa en el procesador ' +
-           ('(forzado con WAKO_DEVICE=cpu)' if os.environ.get('WAKO_DEVICE') == 'cpu' else '(ver la línea de OpenGL)'))
+           ('(forzado con MONTAGE_DEVICE=cpu)' if os.environ.get('MONTAGE_DEVICE') == 'cpu' else '(ver la línea de OpenGL)'))
     print(f'  Modo de render:  {how}')
     print(f"  Codificador:     {d['codificador']} - {ENC_LABEL.get(d['codificador'], d['codificador'])}")
     print(f"  Tiempo estimado: un edit de {e['video_seg'] // 60}:{e['video_seg'] % 60:02d} tarda cerca de "
