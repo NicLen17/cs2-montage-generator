@@ -28,6 +28,9 @@ TASKS = {
     'final': lambda p, a: ['build.py', p],
     'preview': lambda p, a: ['build.py', p, '--preview', ','.join(f'{float(t):.2f}' for t in a.get('times', [])[:8])],
     'shorts': lambda p, a: ['short.py', p, '--count', 'auto', '--dur', '35'],
+    'thumb': lambda p, a: ['ui/chain.py', json.dumps([['publish.py', p, 'frames'], ['publish.py', p, 'thumb', '--frame', str(int(a.get('frame', 0))),
+                                                       '--text', str(a.get('text') or 'ACE')[:40], '--sub', str(a.get('sub') or '')[:40]]])],
+    'pack': lambda p, a: ['ui/chain.py', json.dumps([['publish.py', p, 'info'], ['pack.py', p]])],
 }
 
 
@@ -141,12 +144,17 @@ def project_data(name):
     d['uploads'] = sorted(os.listdir(os.path.join(p, '_entrada'))) if os.path.isdir(os.path.join(p, '_entrada')) else []
     d['files'] = dict(draft=os.path.exists(os.path.join(p, 'borrador.mp4')), final=os.path.exists(paths.find_video(name)),
                       doubt_sheet=os.path.exists(os.path.join(p, 'sheets', 'kf_dudosos.jpg')))
+    pub = os.path.join(p, 'publish'); od = paths.project_dir(name)
+    ls = lambda d_, ext: sorted(f for f in os.listdir(d_) if f.lower().endswith(ext)) if os.path.isdir(d_) else []
+    d['delivery'] = dict(shorts=ls(os.path.join(od, 'shorts'), '.mp4'), thumbs=[f for f in ls(pub, '.jpg') if f.startswith('thumbnail')],
+                         candidates=len(ls(os.path.join(pub, 'thumbs'), '.jpg')), info=read_json(os.path.join(pub, 'info.json')),
+                         packed=os.path.exists(os.path.join(od, 'info', 'LEEME.md')), folder=od)
     d['check'] = (open(os.path.join(p, 'check_kills.txt'), encoding='utf-8').read() if os.path.exists(os.path.join(p, 'check_kills.txt')) else '')
     d['status'] = read_json(os.path.join(p, 'status.json')); d['job'] = job_state(name)
     return d
 
 
-def save_edit(name, edit):
+def save_edit(name, edit, dry=False):
     p = pdir(name)
     try:
         ns = planner.build(edit, p)                 # valida antes de guardar: un edit roto no pisa al que anda
@@ -154,6 +162,8 @@ def save_edit(name, edit):
         raise ApiError(str(e))
     except (KeyError, IndexError, TypeError, ValueError) as e:
         raise ApiError(f'El edit no se puede armar: falta o está mal {e}')
+    if dry:                                         # solo calcular: para ver el resultado de arrastrar sin guardar
+        return dict(timeline=planner.timeline(ns))
     proj.save_edit(p, edit)
     r = subprocess.run([PY, os.path.join(ENGINE, 'check_kills.py'), p], capture_output=True, text=True, encoding='utf-8',
                        errors='replace', env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
@@ -229,6 +239,10 @@ class Handler(BaseHTTPRequestHandler):
         if parts[0] == 'media':                       # /media/<proyecto>/<archivo dentro del proyecto> | /media/_fonts/x | /media/_out/<proyecto>
             if parts[1] == '_fonts': return self.send_file(os.path.join(ENGINE, 'assets', 'fonts', os.path.basename(parts[2])))
             if parts[1] == '_out': return self.send_file(paths.find_video(os.path.basename(pdir(parts[2]))))
+            if parts[1] == '_dir':                      # /media/_dir/<proyecto>/<archivo dentro de output/<proyecto>/>
+                base = paths.project_dir(os.path.basename(pdir(parts[2]))); f = os.path.normpath(os.path.join(base, *parts[3:]))
+                if not f.startswith(base + os.sep): raise ApiError('Ruta inválida.')
+                return self.send_file(f)
             base = pdir(parts[1]); f = os.path.normpath(os.path.join(base, *parts[2:]))
             if not f.startswith(base + os.sep): raise ApiError('Ruta inválida.')
             return self.send_file(f)
@@ -257,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
             if not sub and method == 'GET': return self.send_json(project_data(name))
             if sub == 'state' and method == 'GET':
                 return self.send_json(dict(status=read_json(os.path.join(pdir(name), 'status.json')), job=job_state(name)))
-            if sub == 'edit' and method == 'PUT': return self.send_json(save_edit(name, self.body()))
+            if sub == 'edit' and method == 'PUT': return self.send_json(save_edit(name, self.body(), dry='dry' in q))
             if sub == 'kills' and method == 'PUT': return self.send_json(save_kills(name, self.body()))
             if sub == 'run' and method == 'POST':
                 b = self.body(); return self.send_json(start_job(name, b.get('task'), b.get('args')))

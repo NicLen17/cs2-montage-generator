@@ -94,7 +94,10 @@ video, .frame { width: 100%; border-radius: var(--r1); background: #000; display
 /* línea de tiempo: el elemento protagonista del editor */
 .tl { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r2); overflow-x: auto; }
 .tl svg { display: block; }
-.tl .seg { cursor: pointer; } .tl .seg:hover rect { filter: brightness(1.25); }
+.tl { touch-action: pan-y; user-select: none; }
+.tl .seg { cursor: grab; }
+.tl .grip { fill: #000; opacity: 0; cursor: ew-resize; }
+.tl .seg:hover .grip { opacity: .28; } .tl .seg:hover rect { filter: brightness(1.25); }
 .tl text { font: 11px var(--body); fill: var(--muted); pointer-events: none; }
 .tl .lbl { fill: #0d0f14; font-weight: 700; }
 .legend { display: flex; gap: var(--s4); flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: var(--s2); }

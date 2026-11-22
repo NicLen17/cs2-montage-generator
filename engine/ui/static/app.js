@@ -52,7 +52,7 @@ const home = guard(async () => {
 });
 
 /* ---------- proyecto ---------- */
-const TABS = [['clips', 'Clips y kills'], ['editor', 'Editor'], ['estilo', 'Estilo'], ['render', 'Render']];
+const TABS = [['clips', 'Clips y kills'], ['editor', 'Editor'], ['estilo', 'Estilo'], ['render', 'Render'], ['entrega', 'Entrega']];
 function draw() {
   const d = S.data; if (!d) return;
   $('#crumbs').innerHTML = `<span>/</span><b>${esc(d.name.replace(/_/g, ' '))}</b>${S.dirty ? '<span class="tag warn">cambios sin guardar</span>' : ''}`;
@@ -61,7 +61,7 @@ function draw() {
     <div class="steps" role="tablist">${TABS.map(([k, l], i) => `<button role="tab" aria-selected="${S.tab === k}" data-tab="${k}"><span class="n">${i + 1}</span>${l}</button>`).join('')}</div>
     <section id="view"></section>`;
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => go(b.dataset.tab));
-  ({ clips: viewClips, editor: viewEditor, estilo: viewStyle, render: viewRender }[S.tab] || viewClips)();
+  ({ clips: viewClips, editor: viewEditor, estilo: viewStyle, render: viewRender, entrega: viewDelivery }[S.tab] || viewClips)();
 }
 function watch() {
   clearInterval(S.poll);
@@ -76,7 +76,7 @@ function watch() {
 const runTask = guard(async (task, args) => { S.data.job = await api('POST', `/api/projects/${S.name}/run`, { task, args }); draw(); });
 function jobBox() {
   const j = S.data.job; if (!j || (!j.running && j.code === 0)) return '<div id="job"></div>';
-  const names = { auto: 'Analizando y armando el edit', shots: 'Recalculando disparos', draft: 'Renderizando el borrador', final: 'Renderizando el video final', preview: 'Renderizando vistas previas', shorts: 'Armando shorts' };
+  const names = { thumb: 'Generando miniaturas', pack: 'Armando la carpeta de entrega', auto: 'Analizando y armando el edit', shots: 'Recalculando disparos', draft: 'Renderizando el borrador', final: 'Renderizando el video final', preview: 'Renderizando vistas previas', shorts: 'Armando shorts' };
   return `<div id="job" class="banner ${j.running ? 'warn' : 'err'}"><strong>${j.running ? (names[j.task] || j.task) + '…' : 'La última tarea falló'}</strong>
     <span class="muted small"> ${j.running ? Math.round(j.elapsed) + ' s' : ''}</span><pre class="report" style="margin-top:8px;max-height:140px">${esc((j.log || '').split('\n').slice(-8).join('\n'))}</pre></div>`;
 }
@@ -140,13 +140,13 @@ function viewEditor() {
   if (d.kind === 'nuevo') { v.innerHTML = `<div class="empty"><h2>Todavía no hay un edit</h2><p>Primero subí y analizá los clips en el paso 1.</p></div>`; return; }
   if (d.kind === 'plan') { v.innerHTML = `<div class="stack">${d.timeline ? timelineSvg(d.timeline, d.song) : ''}<div class="banner warn row spread"><span>Este proyecto usa un plan.py (formato anterior): se puede ver y renderizar, pero no editar acá.</span><button id="mig" class="primary">Pasarlo al formato editable</button></div></div>`;
     $('#mig').onclick = guard(async () => { await api('POST', `/api/projects/${S.name}/migrate`); toast('Listo: ahora el edit se puede editar acá.'); S.data = null; await load(); }); return; }
-  const T = d.timeline, plays = playsOf();
+  const T = S.tl || d.timeline, plays = playsOf();
   const sel = S.sel === 'song' ? null : plays.find(x => x.id === S.sel);
   const lines = (d.check || '').split('\n'); const probs = +(d.check.match(/(\d+) problema/) || [0, 0])[1];
   const warns = lines.filter(l => /aviso\(s\)|CORTE\(S\)/.test(l)).length;
   v.innerHTML = `<div class="stack">${d.error ? `<div class="banner err">${esc(d.error)}</div>` : ''}
     ${T ? timelineSvg(T, d.song) : ''}
-    <div class="legend"><span><i style="background:var(--accent)"></i>energía de la canción</span><span><i style="background:var(--kill)"></i>kill</span><span><i style="background:var(--info)"></i>momento de sincronía</span><span><i style="background:#fff"></i>transición</span><span>Tocá una play para editarla.</span></div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>energía de la canción</span><span><i style="background:var(--kill)"></i>kill</span><span><i style="background:var(--info)"></i>momento de sincronía</span><span><i style="background:#fff"></i>transición</span><span>Tocá una play para editarla, arrastrala para cambiarla de lugar, o arrastrá sus bordes para recortarla.</span></div>
     <div class="editor"><div class="stack"><div class="panel tight" style="padding:0">
         <div class="acthead row spread"><span>CANCIÓN Y ESTRUCTURA</span><button class="ghost" id="songbtn">Editar</button></div>
         <div class="acthead">ACTO 1, hasta el drop principal</div><ul class="playlist">${plays.filter(x => x.act === 'act1').map(rowPlay).join('') || '<li class="muted">Sin plays</li>'}</ul>
@@ -158,9 +158,10 @@ function viewEditor() {
       <div class="sticky"><div class="panel tight stack" id="form">${S.sel === 'song' ? formSong() : sel ? formPlay(sel) : `<p class="muted">Elegí una play de la lista o de la línea de tiempo para cambiar su título, sus cortes o su transición.</p>`}
         <div class="row" style="border-top:1px solid var(--line);padding-top:16px"><button class="primary" id="save" ${S.dirty ? '' : 'disabled'}>Guardar y volver a calcular</button>
         ${S.dirty ? '<button id="undo" class="ghost">Descartar cambios</button>' : ''}</div></div></div></div></div>`;
-  v.querySelectorAll('[data-play]').forEach(el => el.addEventListener('click', () => { S.sel = +el.dataset.play; draw(); }));
+  v.querySelectorAll('li[data-play]').forEach(el => el.addEventListener('click', () => { S.sel = +el.dataset.play; draw(); }));
+  bindTimeline();
   $('#songbtn').onclick = () => { S.sel = 'song'; draw(); };
-  $('#save').onclick = saveEdit; if ($('#undo')) $('#undo').onclick = () => { S.edit = clone(S.data.edit); S.dirty = false; draw(); };
+  $('#save').onclick = saveEdit; if ($('#undo')) $('#undo').onclick = () => { S.edit = clone(S.data.edit); S.dirty = false; S.tl = null; draw(); };
   const add = $('#addplay'); if (add) add.onchange = () => { if (!add.value) return; const c = d.clips.find(x => x.clip === +add.value); const sh = c.shots;
     S.edit.act1.push({ clip: c.clip, segs: [{ kill: 0, end: +(sh[sh.length - 1] + 0.9).toFixed(2), lead: 1.2, kills: sh.map((_, i) => i) }] }); S.sel = S.edit.act1.length - 1; S.dirty = true; draw(); };
   bindForm();
@@ -219,7 +220,7 @@ function bindForm() {
   if (!p) return;
   f.querySelectorAll('[data-cap]').forEach(el => el.oninput = () => { const a = [$('#f-cap').value.trim().toUpperCase(), $('#f-sub').value.trim().toUpperCase()]; if (a[0]) p.cap = a; else delete p.cap; touch(); });
   f.querySelectorAll('[data-key]').forEach(el => el.oninput = () => { const k = el.dataset.key; if (el.value === '') delete p[k]; else p[k] = el.type === 'number' ? +el.value : el.value; touch(); });
-  f.querySelectorAll('[data-seg]').forEach(el => el.oninput = () => { const [i, k] = el.dataset.seg.split(':'); p.segs[i][k] = +el.value; touch(); });
+  f.querySelectorAll('[data-seg]').forEach(el => { el.oninput = () => { const [i, k] = el.dataset.seg.split(':'); p.segs[i][k] = +el.value; touch(); }; el.onchange = () => recalc(); });
   f.querySelectorAll('[data-segk]').forEach(el => el.onchange = () => { const [i, j] = el.dataset.segk.split(':').map(Number), s = p.segs[i];
     s.kills = el.checked ? [...new Set([...s.kills, j])].sort((a, b) => a - b) : s.kills.filter(q => q !== j);
     if (!s.kills.length) { s.kills = [j]; toast('Una toma necesita al menos una kill.', true); } if (!s.kills.includes(s.kill)) s.kill = s.kills[0]; S.dirty = true; draw(); });
@@ -227,16 +228,16 @@ function bindForm() {
   f.querySelectorAll('[data-delseg]').forEach(el => el.onclick = () => { p.segs.splice(+el.dataset.delseg, 1); S.dirty = true; draw(); });
   const as = $('#addseg'); if (as) as.onclick = () => { const c = S.data.clips.find(k => k.clip === p.clip), usedK = new Set(p.segs.flatMap(s => s.kills)); const j = c.shots.findIndex((_, i) => !usedK.has(i));
     if (j < 0) return toast('Todas las kills del clip ya están en una toma.', true); p.segs.push({ kill: j, end: +(c.shots[j] + 0.9).toFixed(2), lead: 0.8, kills: [j] }); p.segs.sort((a, b) => a.kill - b.kill); S.dirty = true; draw(); };
-  f.querySelectorAll('[data-mv]').forEach(el => el.onclick = () => { const a = S.edit[x.act], j = x.i + +el.dataset.mv; [a[x.i], a[j]] = [a[j], a[x.i]]; S.sel = (x.act === 'act2' ? 100 : 0) + j; S.dirty = true; draw(); });
+  f.querySelectorAll('[data-mv]').forEach(el => el.onclick = () => { const a = S.edit[x.act], j = x.i + +el.dataset.mv; [a[x.i], a[j]] = [a[j], a[x.i]]; S.sel = (x.act === 'act2' ? 100 : 0) + j; S.dirty = true; recalc(); });
   const ab = f.querySelector('[data-act]'); if (ab) ab.onclick = () => { const to = x.act === 'act1' ? 'act2' : 'act1'; if (x.act === 'act2' && S.edit.act2.length === 1) return toast('El acto 2 necesita al menos una play.', true);
-    S.edit[x.act].splice(x.i, 1); S.edit[to].push(p); S.sel = (to === 'act2' ? 100 : 0) + S.edit[to].length - 1; S.dirty = true; draw(); };
-  const rm = f.querySelector('[data-rm]'); if (rm) rm.onclick = () => { S.edit[x.act].splice(x.i, 1); S.sel = null; S.dirty = true; draw(); };
+    S.edit[x.act].splice(x.i, 1); S.edit[to].push(p); S.sel = (to === 'act2' ? 100 : 0) + S.edit[to].length - 1; S.dirty = true; recalc(); };
+  const rm = f.querySelector('[data-rm]'); if (rm) rm.onclick = () => { S.edit[x.act].splice(x.i, 1); S.sel = null; S.dirty = true; recalc(); };
   const see = f.querySelector('[data-see]'); if (see) see.onclick = () => { S.clip = +see.dataset.see; };
 }
 const saveEdit = guard(async () => {
   const b = $('#save'); b.classList.add('busy'); b.disabled = true;
   try { const r = await api('PUT', `/api/projects/${S.name}/edit`, S.edit);
-    Object.assign(S.data, { edit: clone(S.edit), timeline: r.timeline, check: r.check, style: r.style, error: null }); S.dirty = false; toast('Guardado. El edit dura ' + fmt(r.timeline.TOTAL) + '.'); draw(); }
+    Object.assign(S.data, { edit: clone(S.edit), timeline: r.timeline, check: r.check, style: r.style, error: null }); S.dirty = false; S.tl = null; toast('Guardado. El edit dura ' + fmt(r.timeline.TOTAL) + '.'); draw(); }
   catch (e) { b.classList.remove('busy'); b.disabled = false; throw e; }
 });
 function timelineSvg(T, song) {
@@ -249,14 +250,16 @@ function timelineSvg(T, song) {
   }
   const ticks = []; for (let t = 0; t <= total; t += 10) ticks.push(`<line x1="${t * pps}" x2="${t * pps}" y1="62" y2="${H - 16}" stroke="#2f3442"/><text x="${t * pps + 3}" y="${H - 4}">${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</text>`);
   const sync = (T.SYNC || []).map(s => `<line x1="${(s - a0) * pps}" x2="${(s - a0) * pps}" y1="4" y2="${H - 18}" stroke="#7fb4ff" stroke-dasharray="3 3"/>`).join('');
-  const kindFill = { logo: '#3a3f4f', interlude: '#3a3f4f', outro: '#3a3f4f', slowmo: '#d7dbe6' };
+  const kindFill = { logo: '#3a3f4f', interlude: '#3a3f4f', outro: '#3a3f4f', slowmo: '#d7dbe6' }, count = {}; S.pps = pps;
   const segs = T.segments.map(s => { const x = s.o0 * pps, w = Math.max(1, (s.o1 - s.o0) * pps - 1), play = s.kind === 'zoom_out' ? null : s.play;
     const fill = kindFill[s.kind] || (s.play >= 0 ? color(s.play) : '#3a3f4f'), label = { logo: 'logo', outro: 'cierre', interlude: 'luces' }[s.kind] || (w > 26 ? 'c' + s.clip : '');
-    return `<g class="seg" ${play != null && s.play >= 0 && s.kind !== 'face_out' ? `data-play="${s.play}"` : ''}><title>${s.kind === 'play' ? 'clip c' + s.clip : s.kind} · ${fmt(s.o0)} a ${fmt(s.o1)}</title>
-      <rect x="${x.toFixed(1)}" y="70" width="${w.toFixed(1)}" height="46" rx="3" fill="${fill}" ${S.sel === s.play && s.kind === 'play' ? 'stroke="#fff" stroke-width="2"' : ''}/><text class="lbl" x="${(x + 5).toFixed(1)}" y="98">${label}</text></g>`; }).join('');
+    const mine = play != null && s.play >= 0 && s.kind === 'play' && !s.burst, si = mine ? (count[s.play] = (count[s.play] ?? -1) + 1) : -1;
+    const grips = mine ? `<rect class="grip" data-grip="l" x="${x.toFixed(1)}" y="70" width="6" height="46"/><rect class="grip" data-grip="r" x="${(x + w - 6).toFixed(1)}" y="70" width="6" height="46"/>` : '';
+    return `<g class="seg" ${play != null && s.play >= 0 && s.kind !== 'face_out' ? `data-play="${s.play}" data-si="${si}" data-x="${x.toFixed(1)}" data-w="${w.toFixed(1)}"` : ''}><title>${s.kind === 'play' ? 'clip c' + s.clip : s.kind} · ${fmt(s.o0)} a ${fmt(s.o1)}</title>
+      <rect x="${x.toFixed(1)}" y="70" width="${w.toFixed(1)}" height="46" rx="3" fill="${fill}" ${S.sel === s.play && s.kind === 'play' ? 'stroke="#fff" stroke-width="2"' : ''}/><text class="lbl" x="${(x + 8).toFixed(1)}" y="98">${label}</text>${grips}</g>`; }).join('');
   const kills = T.kills.map(k => `<rect x="${(k * pps - 1).toFixed(1)}" y="64" width="2" height="58" fill="#ef5350"/>`).join('');
   const bounds = T.boundaries.map(b => `<path d="M${(b[0] * pps).toFixed(1)},120 l4,5 l-4,5 l-4,-5 z" fill="#fff" opacity=".85"><title>${b[1]}</title></path>`).join('');
-  return `<div class="tl" role="img" aria-label="Línea de tiempo del edit: ${T.segments.length} tramos, ${T.kills.length} kills, ${fmt(total)}"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${area}${ticks.join('')}${sync}${segs}${kills}${bounds}</svg></div>`;
+  return `<div class="tl" id="tl" role="img" aria-label="Línea de tiempo del edit: ${T.segments.length} tramos, ${T.kills.length} kills, ${fmt(total)}"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${area}${ticks.join('')}${sync}${segs}${kills}${bounds}</svg></div>`;
 }
 
 /* ---------- 3. estilo ---------- */
@@ -328,6 +331,68 @@ function paintRender() {
       <video controls preload="metadata" src="${src}?${Date.now()}"></video>
       ${done && st.check ? `<pre class="report">${esc(st.check)}</pre>` : ''}<p class="muted small">${done ? esc(st.out) : ''}</p></div>`
       : `<div class="empty"><h2>Acá va a aparecer el video</h2><p>Renderizá el borrador para mirarlo entero antes del final.</p></div>`; }
+}
+
+/* ---------- línea de tiempo: arrastrar y recortar ---------- */
+const recalc = guard(async () => {          // calcula el edit sin guardarlo, para ver cómo queda
+  try { S.tl = (await api('PUT', `/api/projects/${S.name}/edit?dry=1`, S.edit)).timeline; }
+  catch (e) { toast('Así no se puede armar: ' + e.message, true); }
+  draw();
+});
+function bindTimeline() {
+  const tl = $('#tl'); if (!tl || !S.edit) return;
+  let d = null;
+  tl.onpointerdown = e => { const g = e.target.closest('g[data-play]'); if (!g) return;
+    d = { g, play: +g.dataset.play, si: +g.dataset.si, grip: e.target.dataset.grip || null, x0: e.clientX, moved: false, rect: g.querySelector('rect') };
+    tl.setPointerCapture(e.pointerId); e.preventDefault(); };
+  tl.onpointermove = e => { if (!d) return; const dx = e.clientX - d.x0; if (Math.abs(dx) > 4) d.moved = true; if (!d.moved) return;
+    const x = +d.g.dataset.x, w = +d.g.dataset.w;
+    if (d.grip === 'r') d.rect.setAttribute('width', Math.max(8, w + dx));
+    else if (d.grip === 'l') { d.rect.setAttribute('x', Math.min(x + w - 8, x + dx)); d.rect.setAttribute('width', Math.max(8, w - dx)); }
+    else { tl.querySelectorAll(`g[data-play="${d.play}"]`).forEach(n => { n.style.transform = `translateX(${dx}px)`; n.style.opacity = .7; }); } };
+  tl.onpointerup = e => { if (!d) return; const o = d; d = null; const dx = e.clientX - o.x0;
+    const x = playsOf().find(k => k.id === o.play);
+    if (!o.moved || !x) { S.sel = o.play; return draw(); }
+    const p = x.p, secs = dx / S.pps;
+    if (o.grip && o.si >= 0 && p.segs?.[o.si]) { const s = p.segs[o.si], shots = S.data.clips.find(c => c.clip === p.clip)?.shots || [];
+      if (o.grip === 'r') s.end = +Math.max((shots[Math.max(...s.kills)] ?? 0) + 0.3, s.end + secs).toFixed(2);       // nunca antes de la última kill
+      else s.lead = +Math.max(0.3, s.lead - secs).toFixed(2);                                                            // borde izquierdo: más o menos segundos antes de la kill
+      S.sel = o.play; S.dirty = true; return recalc(); }
+    // mover la play: cae antes de la play sobre la que se soltó (puede cambiar de acto)
+    const box = tl.getBoundingClientRect(), px = e.clientX - box.left + tl.scrollLeft, T = S.tl || S.data.timeline;
+    const over = T.segments.find(s => s.kind === 'play' && s.o0 * S.pps <= px && px < s.o1 * S.pps);
+    if (!over || over.play === o.play) return draw();
+    const to = playsOf().find(k => k.id === over.play); if (!to) return draw();
+    if (x.act === 'act2' && S.edit.act2.length === 1 && to.act !== 'act2') { toast('El acto 2 necesita al menos una play.', true); return draw(); }
+    S.edit[x.act].splice(x.i, 1); let j = S.edit[to.act].indexOf(to.p); if (dx > 0) j += 1;
+    S.edit[to.act].splice(j, 0, p); S.sel = (to.act === 'act2' ? 100 : 0) + j; S.dirty = true; recalc(); };
+  tl.onpointercancel = () => { d = null; draw(); };
+}
+
+/* ---------- 5. entrega ---------- */
+function viewDelivery() {
+  const d = S.data, dv = d.delivery, busy = !!d.job?.running, T = d.timeline;
+  const title = T?.captions?.[0]?.[1] || ['ACE', ''];
+  $('#view').innerHTML = `<div class="stack">${jobBox()}
+    ${d.files.final ? '' : '<div class="banner warn">Todavía no hay video final: renderizalo en el paso 4. Los shorts y la miniatura salen de ese video.</div>'}
+    <div class="panel stack"><div class="row spread"><div><h2>Shorts verticales</h2><p class="muted small">De 2 a 4 recortes de unos 35 s para TikTok, Reels y YouTube Shorts, sin repetir tramos.</p></div>
+        <button id="mkshorts" ${busy || !d.files.final ? 'disabled' : ''} class="${dv.shorts.length ? '' : 'primary'}">${dv.shorts.length ? 'Volver a armarlos' : 'Armar los shorts'}</button></div>
+      ${dv.shorts.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">${dv.shorts.map(f => `<div><video controls preload="metadata" src="/media/_dir/${S.name}/shorts/${encodeURIComponent(f)}"></video><p class="muted small">${esc(f)}</p></div>`).join('')}</div>` : ''}</div>
+    <div class="panel stack"><div><h2>Miniatura</h2><p class="muted small">1280x720 en tres estilos (jugada, reacción, limpia), con el cuadro de una kill con título.</p></div>
+      <div class="row"><div class="field" style="width:200px"><label for="th-t">Texto grande</label><input id="th-t" type="text" value="${esc(title[0])}"></div>
+        <div class="field" style="width:200px"><label for="th-s">Texto chico</label><input id="th-s" type="text" value="${esc(title[1] || '')}"></div>
+        <div class="field" style="width:130px"><label for="th-f">Cuadro candidato</label><input id="th-f" type="number" min="0" value="0"></div>
+        <button id="mkthumb" style="align-self:end" ${busy || !d.files.final ? 'disabled' : ''}>Generar miniaturas</button></div>
+      ${dv.candidates ? `<img class="frame" alt="Cuadros candidatos numerados" src="/media/${S.name}/publish/thumbs_sheet.jpg?${Date.now()}">` : ''}
+      ${dv.thumbs.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">${dv.thumbs.filter(f => f !== 'thumbnail.jpg').map(f => `<div><img class="frame" alt="${esc(f)}" src="/media/${S.name}/publish/${f}?${Date.now()}"><p class="muted small">${esc(f.replace('thumbnail_', '').replace('.jpg', ''))}</p></div>`).join('')}</div>` : ''}</div>
+    <div class="panel stack"><div class="row spread"><div><h2>Carpeta de entrega</h2><p class="muted small">Junta el video, los shorts, las miniaturas y los capítulos en una carpeta lista para subir. No sube nada a ningún lado.</p></div>
+        <button id="mkpack" ${busy || !d.files.final ? 'disabled' : ''} class="${dv.shorts.length && dv.thumbs.length ? 'primary' : ''}">Armar la carpeta</button></div>
+      ${dv.info?.capitulos ? `<div><h3>Capítulos para la descripción de YouTube</h3><pre class="report" style="margin-top:6px">${esc(dv.info.capitulos.map(c => c[0] + ' ' + c[1]).join('\n'))}</pre></div>` : ''}
+      ${dv.packed ? `<div class="banner ok small">Lista en ${esc(dv.folder)}</div>` : ''}
+      <p class="muted small">Antes de publicar, revisá si la canción tiene derechos: casi todas las comerciales generan un reclamo de Content ID (docs/musica-y-derechos.md).</p></div></div>`;
+  $('#mkshorts').onclick = () => runTask('shorts');
+  $('#mkthumb').onclick = () => runTask('thumb', { text: $('#th-t').value, sub: $('#th-s').value, frame: +$('#th-f').value || 0 });
+  $('#mkpack').onclick = () => runTask('pack');
 }
 
 /* ---------- arranque ---------- */
