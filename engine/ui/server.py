@@ -201,7 +201,9 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, obj, code=200):
         b = json.dumps(obj, ensure_ascii=False, default=str).encode('utf-8')
         self.send_response(code); self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'no-store'); self.end_headers(); self.wfile.write(b)
+        self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'no-store')
+        if self.close_connection: self.send_header('Connection', 'close')
+        self.end_headers(); self.wfile.write(b)
 
     def send_file(self, path):
         if not os.path.isfile(path): raise ApiError('No existe.', 404)
@@ -226,10 +228,11 @@ class Handler(BaseHTTPRequestHandler):
                 left -= len(chunk)
 
     def body(self):
-        n = int(self.headers.get('Content-Length') or 0)
+        n = int(self.headers.get('Content-Length') or 0); self._read = True
         return json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
 
     def route(self, method):
+        self._read = False
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         parts = [urllib.parse.unquote(x) for x in u.path.strip('/').split('/') if x]
         if method == 'GET' and (not parts or parts[0] not in ('api', 'media')):
@@ -286,7 +289,9 @@ class Handler(BaseHTTPRequestHandler):
                 proj.save_edit(pdir(name), edit); return self.send_json(dict(ok=True))
             if sub == 'upload' and method == 'PUT':
                 fn = os.path.basename((q.get('name') or [''])[0])
-                if not fn.lower().endswith(('.mp4', '.mp3', '.wav', '.m4a', '.flac', '.png')): raise ApiError('Se aceptan clips .mp4, una canción (.mp3, .wav, .m4a, .flac) y logo.png.')
+                if not fn.lower().endswith(('.mp4', '.mp3', '.wav', '.m4a', '.flac', '.png')):
+                    self.close_connection = True          # el cuerpo no se leyó: esta conexión no se reusa
+                    raise ApiError('Se aceptan clips .mp4, una canción (.mp3, .wav, .m4a, .flac) y logo.png.')
                 d = pdir(name); dst = os.path.join(d, fn) if fn.lower() == 'logo.png' else os.path.join(d, '_entrada', fn)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 left = int(self.headers.get('Content-Length') or 0)
@@ -302,6 +307,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.route(method)
         except ApiError as e:
+            if method != 'GET' and not getattr(self, '_read', False): self.close_connection = True
             self.send_json(dict(error=str(e)), e.code)
         except (preset.PresetError, planner.EditError) as e:
             self.send_json(dict(error=str(e)), 400)

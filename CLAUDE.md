@@ -114,6 +114,13 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 - **Detector (Fase 3):** `shots_conf.json` marca los disparos no encontrados (`sheets/disparos_dudosos.jpg`), `kf_conf.json`
   trae el tipo de kill, `python engine/catalog.py list --sort score` ordena por puntaje y `channel.player` del preset fija el
   nick. `python engine/doctor.py` diagnostica la instalación.
+- **Varias canciones en un edit (megamix, 22/11/2026):** `python engine/mixtape.py projects/<nombre>` lee `mix.json` (tramos
+  `[a, b)` de la canción de otros proyectos ya analizados, cada uno con sus momentos fuertes) y deja en el proyecto una sola
+  `song.mp3` con fundidos, sus beats (`grid.npy`, `hits.npy`) y `song.json` con `mix` (dónde empieza cada canción). El resto
+  del motor no cambia. Cada sección empieza unos beats antes de su drop: el cambio de canción lleva `"tin": "mega"` y una
+  play rápida anclada (`kill_at`) en ese drop. `projects/megamix/` tiene los scripts que arman el pool de plays desde todos
+  los edits anteriores (`setup_pool.py`), encajan las plays entre anclas (`build_plan.py`) y corrigen contra `check_kills.py`
+  (`fix_loop.py`).
 - **Antes y después de tocar el motor:** `python -m pytest` (rápido) y `python engine/regress.py projects/my_jealousy_v3`
   (imagen contra la referencia; `--device gpu` y `--cross` para CPU vs GPU). `python -m pytest --slow` suma el detector de
   kills (F1 contra el catálogo) y la regresión de imagen.

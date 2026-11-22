@@ -352,7 +352,7 @@ function bindTimeline() {
     else { tl.querySelectorAll(`g[data-play="${d.play}"]`).forEach(n => { n.style.transform = `translateX(${dx}px)`; n.style.opacity = .7; }); } };
   tl.onpointerup = e => { if (!d) return; const o = d; d = null; const dx = e.clientX - o.x0;
     const x = playsOf().find(k => k.id === o.play);
-    if (!o.moved || !x) { S.sel = o.play; return draw(); }
+    if (!(o.moved || Math.abs(dx) > 4) || !x) { S.sel = o.play; return draw(); }      // un toque sin arrastrar: elegir la play
     const p = x.p, secs = dx / S.pps;
     if (o.grip && o.si >= 0 && p.segs?.[o.si]) { const s = p.segs[o.si], shots = S.data.clips.find(c => c.clip === p.clip)?.shots || [];
       if (o.grip === 'r') s.end = +Math.max((shots[Math.max(...s.kills)] ?? 0) + 0.3, s.end + secs).toFixed(2);       // nunca antes de la última kill
