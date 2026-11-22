@@ -28,6 +28,7 @@
   "duration": 1.5
  },
  "camera": {
+  "rect": [25, 18, 490, 278],
   "open_zoom": 2.0,
   "close_zoom": 1.75
  },
