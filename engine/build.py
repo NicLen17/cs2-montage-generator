@@ -193,7 +193,8 @@ def _file_hash(p):
 
 
 AUDIO_STYLE = ''         # la parte de audio del preset: si cambia, se vuelve a mezclar
-AUDIO_OUT = ('work_audio.wav', 'audio_balance.txt', 'render_log.txt', 'check_render.txt', 'borrador.mp4', 'audio.key')
+AUDIO_OUT = ('work_audio.wav', 'audio_balance.txt', 'render_log.txt', 'check_render.txt', 'borrador.mp4', 'audio.key',
+             'status.json', 'timeline.json')
 
 
 def _audio_key(project):
@@ -259,9 +260,52 @@ def default_workers(device):
     return max(1, (os.cpu_count() or 4) - 2)
 
 
+STAGES = [('preparando', 'Leer el plan y el estilo'), ('camaras_lentas', 'Cámaras lentas'), ('render', 'Render de video'),
+          ('audio', 'Mezcla de audio'), ('uniendo', 'Unir video y audio'), ('verificando', 'Verificar el resultado'),
+          ('listo', 'Listo')]
+
+
+class Status:
+    """Estado del render en projects/<nombre>/status.json, para quien quiera mostrar el paso a paso (la interfaz web, un
+    script): etapa actual, pedazos hechos / totales, tiempo transcurrido y estimado, dispositivo y archivo de salida."""
+    def __init__(self, project, **kw):
+        self.path = os.path.join(project, 'status.json'); self.t0 = time.time()
+        self.d = dict(stage='preparando', done=0, total=0, started=self.t0, stages=[dict(id=a, label=b) for a, b in STAGES], **kw)
+        self.write()
+
+    def update(self, **kw):
+        self.d.update(kw); self.write()
+
+    def write(self):
+        d = dict(self.d, elapsed=round(time.time() - self.t0, 1), updated=time.time(), pid=os.getpid())
+        if d['stage'] == 'render' and d['done'] and d['total']:
+            t = time.time() - d.get('render_t0', self.t0)
+            d['eta'] = round(t / d['done'] * (d['total'] - d['done']), 1)
+        try:
+            tmp = self.path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as fh: json.dump(d, fh, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass                      # el estado es informativo: nunca frena un render
+
+
 def main():
     try: sys.stdout.reconfigure(encoding='utf-8')
     except Exception: pass
+    try:
+        _main()
+    except SystemExit as e:
+        if e.code not in (None, 0) and STATUS[0]: STATUS[0].update(stage='error', message=str(e.code))
+        raise
+    except Exception as e:
+        if STATUS[0]: STATUS[0].update(stage='error', message=f'{type(e).__name__}: {e}')
+        raise
+
+
+STATUS = [None]
+
+
+def _main():
     ap = argparse.ArgumentParser()
     ap.add_argument('project'); ap.add_argument('--preview'); ap.add_argument('--workers', type=int)
     ap.add_argument('--name'); ap.add_argument('--bitrate', type=int, help='Mbps (por defecto, el del preset: 30)')
@@ -293,6 +337,9 @@ def main():
     t_start = time.time()
     os.environ['WAKO_ENCODER'] = pick()       # se detecta una vez; los procesos de render lo heredan
     print('Codificador de video:', os.environ['WAKO_ENCODER'])
+    status = STATUS[0] = Status(project, draft=bool(args.draft), device=device, gpu=gpu_name, encoder=os.environ['WAKO_ENCODER'],
+                                style=style['name'], total_seconds=round(float(plan.TOTAL), 2))
+    if getattr(plan, 'SLOWMO_SRC', None): status.update(stage='camaras_lentas')
     ensure_slowmo(project, plan)
     audio_job = start_audio(project)
 
@@ -318,8 +365,10 @@ def main():
           + ('  [BORRADOR 960x540 30 fps]' if draft else ''))
 
     done = [0]
+    status.update(stage='render', done=0, total=len(todo), chunks=len(chunks), workers=workers, render_t0=time.time())
     def on_done(f):
         done[0] += 1
+        status.update(done=done[0])
         if done[0] % 5 == 0 or done[0] == len(todo):
             print(f'  pedazo {done[0]}/{len(todo)}  ({time.time() - t_start:.0f}s)', flush=True)
     if todo:
@@ -328,10 +377,12 @@ def main():
         finally: pool.close()
 
     if audio_job is not None:
+        status.update(stage='audio')
         audio_job.wait()
         if audio_job.returncode != 0:
             raise SystemExit('Falló el audio')
         _write_audio_key(project)
+    status.update(stage='uniendo')
     lst = os.path.join(cache, 'list.txt')
     with open(lst, 'w') as fh:
         for f in files:
@@ -355,10 +406,12 @@ def main():
     print(f'\nListo: {out}  ({dur:.1f}s de video, {os.path.getsize(out) / 2**20:.0f} MB) en {time.time() - t_start:.0f}s')
     if draft:
         print('Borrador: miralo entero y marcá los minutos a corregir (engine/locate.py). El render final es sin --draft.')
-        return
+        status.update(stage='listo', out=out, duration=round(dur, 2)); return
     if abs(dur - plan.TOTAL) > 0.5:
         print('ATENCIÓN: la duración no coincide con el plan', plan.TOTAL)
+    report = ''
     if not args.no_check:
+        status.update(stage='verificando', out=out)
         # chequeo final automático (tirones, 60 fps, duración, volumen): queda en projects/<nombre>/check_render.txt
         print('\nChequeo del render (check_render.py)...', flush=True)
         r = subprocess.run([PY, os.path.join(ENGINE, 'check_render.py'), project, out], capture_output=True, text=True,
@@ -368,6 +421,8 @@ def main():
             fh.write(f'{out}\n{rep}')
         print(rep.strip())
         print('Guardado en', os.path.join(project, 'check_render.txt'))
+        report = rep.strip()
+    status.update(stage='listo', out=out, duration=round(dur, 2), check=report)
 
 
 if __name__ == '__main__':
