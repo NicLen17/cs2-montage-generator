@@ -26,3 +26,7 @@ projects/my_jealousy_v2/*
 
 # Programas externos descargados (RIFE para la cámara lenta: python engine/setup_rife.py)
 tools/
+
+# Referencias locales de las pruebas (salen de clips privados: cada uno genera las suyas)
+tests/ref/
+.pytest_cache/
