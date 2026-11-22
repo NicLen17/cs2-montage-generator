@@ -186,9 +186,19 @@ void main(){ vec2 q = vec2(P()) - c; float cov = clamp(r + 0.5 - sqrt(dot(q, q))
 
 # ---------------------------------------------------------------- base
 def init(w, h):
-    """Crea el contexto OpenGL sin ventana. Falla (RuntimeError) si no hay GPU con OpenGL 4.3."""
+    """Crea el contexto OpenGL sin ventana. Falla (RuntimeError) si no hay GPU con OpenGL 4.3.
+    En Linux sin pantalla (servidor, contenedor, sesión por SSH) el contexto por X11 no existe: se prueba EGL."""
     global ctx, W, H, _u8, _dummy
-    ctx = moderngl.create_standalone_context(require=430)
+    try:
+        ctx = moderngl.create_standalone_context(require=430)
+    except Exception as e:
+        import sys
+        if not sys.platform.startswith('linux'):
+            raise
+        try:
+            ctx = moderngl.create_standalone_context(require=430, backend='egl')
+        except Exception as e2:
+            raise RuntimeError(f'sin contexto OpenGL 4.3 (X11: {e}; EGL: {e2})') from e2
     W, H = w, h
     for k, s in SRC.items():
         _progs[k] = ctx.program(vertex_shader=VS, fragment_shader=HEAD + s)

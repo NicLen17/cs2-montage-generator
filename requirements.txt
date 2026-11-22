@@ -1,7 +1,11 @@
-numpy
-scipy
-opencv-python
-pillow
-librosa
-soundfile
-moderngl
+# Versiones fijadas: es el conjunto probado (Python 3.13, Windows 11). Lo instalan install.ps1 / install.sh.
+# Los mínimos aceptados y los extras opcionales están en pyproject.toml: si cambiás algo acá, cambialo allá.
+# PyTorch y Demucs no van acá: la variante de PyTorch depende de la placa y la elige el instalador.
+numpy==2.3.1
+scipy==1.18.1
+opencv-python==5.0.0.93
+pillow==13.0.0
+librosa==1.0.1
+soundfile==0.14.0
+# render en la placa (extra "gpu" de pyproject.toml); sin esto el motor anda igual en modo CPU
+moderngl==5.13.0
