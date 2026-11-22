@@ -16,8 +16,6 @@ import json, os, sys, types
 import numpy as np
 
 VERSION = 1
-BT_DEFAULT = ['whip_lr', 'light', 'whip_lr', 'zoom', 'light', 'whip_lr', 'light', 'whip_rl']
-KILL_FX_DEFAULT = ['bloom', 'chroma_zoom', 'shake_blur', 'flash', 'radial_zoom', 'pop']
 HALF_T = {'mega': 0.30, 'whip_lr': 0.13, 'whip_rl': 0.13, 'light': 0.17, 'zoom': 0.13, 'black_in': 0.70}
 BRIGHT_SWAP = {'bloom': 'pop', 'flash': 'chroma_zoom'}      # en cuadros claros estos dos efectos queman la kill
 INT_KEYED = ('ctx', 'smax', 'kill_at_seg', 'tech')           # campos de una play con clave = número de tramo o de kill
@@ -124,19 +122,22 @@ def build(edit, project):
 
     CAM = {int(k): tuple(v) for k, v in edit.get('cam', {}).items()}
     OPEN_CLIP, OPEN_END = edit['open']['clip'], edit['open']['end']
-    END_CLIP, END_LEN = edit['close']['clip'], float(edit['close'].get('len', 6.0))
+    END_CLIP = edit['close']['clip']
     ACE_CLIP = edit.get('ace_clip')
-    OUTRO_LEN = float(edit.get('outro_len', 4.4))
     REVEAL = bool(edit.get('reveal', True))
     REV_SHIFT = float(edit.get('rev_shift', 0.0))
     VOC = float(edit.get('voc', 0.03))
     LEAD_PLUS = float(edit.get('lead_plus', 0.0))
-    BT = list(edit.get('transitions') or BT_DEFAULT)
+    import preset as _preset
+    ST = _preset.load(edit.get('preset'), edit.get('style'))      # sin "preset": el del canal (config.json)
+    BT = list(edit.get('transitions') or ST['transitions']['rotation'])
     tail = edit.get('tail_fill')              # pasa el sobrante del redondeo al beat a la cola de la toma anterior
     if tail is True: tail = {}
     TAIL_MAX = tail.get('max', 0.89) if tail is not None and tail is not False else None
     TAIL_MAX_IN = tail.get('max_in', 0.89) if TAIL_MAX is not None else None
     BI = [0]
+    END_LEN = float(edit['close'].get('len', ST['cuts']['close_len']))
+    OUTRO_LEN = float(edit.get('outro_len', ST['cuts']['outro_len']))
     ACT1 = [play_from_json(p, f'act1[{i}]') for i, p in enumerate(edit.get('act1', []))]
     ACT2 = [play_from_json(p, f'act2[{i}]') for i, p in enumerate(edit.get('act2', []))]
     if not ACT2:
@@ -292,7 +293,7 @@ def build(edit, project):
             boundaries.append((b['o0'], 'whip_short' if i % 2 else 'light_short', i))
 
     # ---- efecto de cada kill ----
-    base = list(edit.get('kill_fx') or KILL_FX_DEFAULT)
+    base = list(edit.get('kill_fx') or ST['kill_fx']['rotation'])
     if edit.get('kill_fx_explicit'):
         KILL_FX = list(edit['kill_fx_explicit'])
     elif edit.get('kill_fx_bright', True):

@@ -210,7 +210,8 @@ def shade_side(base, side, strength=190):
 
 
 def logo_badge(project, base, corner):
-    lp = os.path.join(project, 'logo.png') if os.path.exists(os.path.join(project, 'logo.png')) else os.path.join(ENGINE, 'assets', 'logo.png')
+    import preset
+    lp = preset.logo_path(preset.for_plan(load_plan(project)), project)
     R = 52; lg = Image.open(lp).convert('RGBA').resize((2 * R, 2 * R), Image.LANCZOS)
     m = Image.new('L', (2 * R, 2 * R), 0); ImageDraw.Draw(m).ellipse((0, 0, 2 * R - 1, 2 * R - 1), fill=255); lg.putalpha(m)
     W, H = base.size; x = 28 if corner == 'left' else W - 2 * R - 28; y = 26
@@ -326,12 +327,17 @@ def chapters(p):
     return [(fmt(t), lb) for t, lb in out]
 
 
+def _channel(p):
+    import preset
+    return preset.for_plan(p)['channel']
+
+
 def cmd_info(project, p, video):
     name = os.path.basename(project); tags = song_tags(project)
     plays = [dict(t=fmt(o), titulo=cap[0], sub=(cap[1] if len(cap) > 1 else '')) for o, cap in sorted(p.captions)]
     info = dict(proyecto=name, video=video, duracion=fmt(p.TOTAL), tema=getattr(p, 'SONG_TITLE', ''),
                 artista=tags.get('artist', ''), titulo_tag=tags.get('title', ''), kills=len(p.kills),
-                plays_con_titulo=plays, capitulos=chapters(p), canal='WAKO TV', twitch='https://twitch.tv/el_wako')
+                plays_con_titulo=plays, capitulos=chapters(p), canal=_channel(p)['name'], twitch=_channel(p)['url'] or _channel(p)['link'])
     d = os.path.join(project, 'publish'); os.makedirs(d, exist_ok=True)
     out = os.path.join(d, 'info.json'); json.dump(info, open(out, 'w', encoding='utf-8'), indent=1, ensure_ascii=False)
     print(json.dumps(info, indent=1, ensure_ascii=False)); print('Guardado en', out)

@@ -8,21 +8,23 @@ from scipy.ndimage import maximum_filter1d, uniform_filter1d
 sys.path.insert(0, ENGINE)
 import project as _project
 globals().update(_project.plan_globals(PROJECT))      # edit.json o plan.py: mismos nombres
+import preset as _preset
+_A = _preset.for_globals(globals())['audio']           # valores de fábrica: preset del canal (presets/)
 SR = 48000
 # Mezcla 2 (20/11/2026, pedido del usuario: "los tiros y headshots siguen muy bajos, la música predomina demasiado").
 # AUDIO_MIX = 1 en el plan vuelve a la mezcla vieja. Los valores se pueden subir desde el plan; no se bajan sin pedido.
-MIX = int(os.environ.get('WAKO_AUDIO_MIX', globals().get('AUDIO_MIX', 2)))
-GAME_GAIN = globals().get('GAME_GAIN', 0.78 if MIX == 1 else 1.0)       # juego en las plays (en el cierre: 0.40 / 0.55)
-GAME_EMPH = globals().get('GAME_EMPH', 1.7 if MIX == 1 else 2.35)        # realce de cada tiro y headshot
-MUSIC_DUCK = globals().get('MUSIC_DUCK', 0.42 if MIX == 1 else 0.52)    # cuánto se aparta la música en cada tiro
-MUSIC_BED = globals().get('MUSIC_BED', 0.92 if MIX == 1 else 0.85)      # música debajo del gameplay (0.92 en logo, interludio, outro)
-GAME_PRESENCE = globals().get('GAME_PRESENCE', 0.25)                    # realce de 2-6 kHz en todo el juego (estallido, headshot)
-MUSIC_CARVE = globals().get('MUSIC_CARVE', 0.35)                        # cuánto libera la música la banda 1.2-6 kHz en cada tiro
-REACT_GAIN = globals().get('REACT_GAIN', 1.3)                           # voz extra en las reacciones (se suma a la que ya trae el clip)
-REACT_DUCK = globals().get('REACT_DUCK', 0.45)                          # cuánto baja la música mientras dura la reacción
-REACT_HOLD = globals().get('REACT_HOLD', 0.6)                           # la música sigue baja este tiempo después del grito
-REACT_RELEASE = globals().get('REACT_RELEASE', 0.5)                     # y vuelve a su nivel en este tiempo (curva suave)
-REACT_KINDS = globals().get('REACT_KINDS', ('grupal',))                 # solo reacciones grupales (pedido del 20/11/2026)
+MIX = int(os.environ.get('WAKO_AUDIO_MIX', globals().get('AUDIO_MIX', _A['mix'])))
+GAME_GAIN = globals().get('GAME_GAIN', 0.78 if MIX == 1 else _A['game_gain'])       # juego en las plays (en el cierre: 0.40 / 0.55)
+GAME_EMPH = globals().get('GAME_EMPH', 1.7 if MIX == 1 else _A['game_emph'])        # realce de cada tiro y headshot
+MUSIC_DUCK = globals().get('MUSIC_DUCK', 0.42 if MIX == 1 else _A['music_duck'])    # cuánto se aparta la música en cada tiro
+MUSIC_BED = globals().get('MUSIC_BED', 0.92 if MIX == 1 else _A['music_bed'])      # música debajo del gameplay (0.92 en logo, interludio, outro)
+GAME_PRESENCE = globals().get('GAME_PRESENCE', _A['game_presence'])                    # realce de 2-6 kHz en todo el juego (estallido, headshot)
+MUSIC_CARVE = globals().get('MUSIC_CARVE', _A['music_carve'])                        # cuánto libera la música la banda 1.2-6 kHz en cada tiro
+REACT_GAIN = globals().get('REACT_GAIN', _A['react_gain'])                           # voz extra en las reacciones (se suma a la que ya trae el clip)
+REACT_DUCK = globals().get('REACT_DUCK', _A['react_duck'])                          # cuánto baja la música mientras dura la reacción
+REACT_HOLD = globals().get('REACT_HOLD', _A['react_hold'])                           # la música sigue baja este tiempo después del grito
+REACT_RELEASE = globals().get('REACT_RELEASE', _A['react_release'])                     # y vuelve a su nivel en este tiempo (curva suave)
+REACT_KINDS = globals().get('REACT_KINDS', tuple(_A['react_kinds']))                 # solo reacciones grupales (pedido del 20/11/2026)
 OUT_WAV = os.environ.get('WAKO_AUDIO_OUT', 'work_audio.wav')
 
 
@@ -124,7 +126,7 @@ if MIX >= 2 and play_mask.any():
     # las canciones vienen masterizadas muy fuerte y el audio de Twitch no: con una ganancia fija el juego quedaba
     # 15 dB debajo de la música. Se nivela contra la música de este video: el juego queda GAME_VS_MUSIC dB debajo
     # (antes del realce de los tiros, que lo pasa por encima en cada disparo).
-    GAME_VS_MUSIC = float(os.environ.get('WAKO_GAME_VS_MUSIC', globals().get('GAME_VS_MUSIC', -11.5)))
+    GAME_VS_MUSIC = float(os.environ.get('WAKO_GAME_VS_MUSIC', globals().get('GAME_VS_MUSIC', _A['game_vs_music'])))
     cur = _db(game.mean(axis=1)[play_mask]) - _db(song.mean(axis=1)[play_mask] * MUSIC_BED)
     game_lift = float(np.clip(10 ** ((GAME_VS_MUSIC - cur) / 20), 1.0, 6.0))
     game *= game_lift

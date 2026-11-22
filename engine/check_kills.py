@@ -23,6 +23,20 @@ HALF = {'mega': 0.30, 'whip_lr': 0.13, 'whip_rl': 0.13, 'light': 0.17, 'zoom': 0
 VIS = ('play', 'zoom_out', 'face_out', 'slowmo')
 
 
+FLOOR = {'pre': {'normal': 0.8, 'primera': 1.2, 'poco visible': 1.2},
+         'post': {'normal': 0.6, 'poco visible': 1.2, 'tecnica': 0.8, 'ultima': 0.7}}
+
+
+def apply_preset(p):
+    """Los mínimos y techos de corte salen del preset del canal (presets/default.json: "cuts")."""
+    global GAP_MAX, MIN_SKIP
+    import preset
+    st = preset.for_plan(p); c = st['cuts']
+    PRE_MAX.update(c['pre_max']); POST_MAX.update(c['post_max']); GAP_MAX = c['gap_max']; MIN_SKIP = c['min_skip']
+    FLOOR['pre'].update(c['pre_min']); FLOOR['post'].update(c['post_min'])
+    HALF.update(st['transitions']['durations'])
+
+
 def load_plan(project):
     """edit.json (datos, lo arma planner.py) o, en proyectos anteriores, plan.py: ver engine/project.py."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -158,6 +172,7 @@ def main():
     except Exception: pass
     project = os.path.abspath(sys.argv[1])
     p = load_plan(project)
+    apply_preset(p)
     rxp = os.path.join(project, 'reactions.json')
     p._RX = {int(k): v for k, v in json.load(open(rxp)).items()} if os.path.exists(rxp) and getattr(p, 'REACTIONS', True) is not False else {}
     segs = [s for s in p.segments if s['kind'] in VIS]
@@ -203,13 +218,13 @@ def main():
             if segs[b]['kind'] in ('face_out',) or (b + 1 < len(segs) and segs[b + 1]['kind'] == 'face_out'):
                 post = max(post, 9.9)
             first, last = j == 0, j == n - 1
-            need_pre, need_post, kind = 0.8, 0.6, 'normal'
-            if first: need_pre, kind = 1.2, 'primera'
-            if j in hard: need_pre, need_post, kind = max(need_pre, 1.2), 1.2, 'poco visible'
-            if j in tech: need_pre, need_post, kind = max(need_pre, s - tech[j] + 0.3), 0.8, 'técnica'
+            need_pre, need_post, kind = FLOOR['pre']['normal'], FLOOR['post']['normal'], 'normal'
+            if first: need_pre, kind = FLOOR['pre']['primera'], 'primera'
+            if j in hard: need_pre, need_post, kind = max(need_pre, FLOOR['pre']['poco visible']), FLOOR['post']['poco visible'], 'poco visible'
+            if j in tech: need_pre, need_post, kind = max(need_pre, s - tech[j] + 0.3), FLOOR['post']['tecnica'], 'técnica'
             if last:
                 typ = bound_at(segs[b]['o1'])
-                need_post = max(need_post, 0.7 + HALF.get(typ, 0.0) if typ else need_post)
+                need_post = max(need_post, FLOOR['post']['ultima'] + HALF.get(typ, 0.0) if typ else need_post)
                 kind += ' / última'
             in_bang = bool(bang) and j in (bang[2], bang[3])
             if in_bang:

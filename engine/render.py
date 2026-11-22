@@ -8,6 +8,9 @@ from encoders import video_encoder_args
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import project as _project
 globals().update(_project.plan_globals(PROJECT))      # edit.json o plan.py: mismos nombres
+import preset as _preset
+ST = _preset.for_globals(globals())                    # estilo: presets/default.json <- preset del canal <- proyecto
+LOOK, CH = ST['look'], ST['channel']
 
 W, H = 1920, 1080
 FD = os.path.join(ENGINE, 'assets', 'fonts') + os.sep
@@ -113,7 +116,7 @@ def frame(seg, t, slot=0):
 def mk_lut():
     x = np.arange(256) / 255.0
     sc = 1 / (1 + np.exp(-(x - 0.5) * 5.5)); sc = (sc - sc.min()) / (sc.max() - sc.min())
-    base = 0.42 * sc + 0.58 * x
+    base = LOOK['contrast'] * sc + (1 - LOOK['contrast']) * x
     b = np.clip(base + 0.04 * (1 - x) ** 2.2 - 0.02 * x ** 2, 0, 1)
     g = np.clip(base + 0.008 * (1 - x) ** 2, 0, 1)
     r = np.clip(base + 0.03 * x ** 1.4 - 0.012 * (1 - x) ** 2, 0, 1)
@@ -121,7 +124,7 @@ def mk_lut():
 LUT = mk_lut()
 yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 RR = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2)
-VIGN = np.clip(1 - 0.26 * np.clip(RR - 0.6, 0, None) ** 1.5, 0, 1)[..., None].astype(np.float32)
+VIGN = np.clip(1 - LOOK['vignette'] * np.clip(RR - 0.6, 0, None) ** 1.5, 0, 1)[..., None].astype(np.float32)
 DIST = np.sqrt((xx - W / 2) ** 2 + (yy - H / 2) ** 2)
 
 
@@ -148,10 +151,10 @@ def streak(f, amount, tint):
 def grade(f8):
     f = cv2.LUT(f8, LUT)
     hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV)
-    hsv[..., 1] = cv2.convertScaleAbs(hsv[..., 1], alpha=1.15)
+    hsv[..., 1] = cv2.convertScaleAbs(hsv[..., 1], alpha=LOOK['saturation'])
     f = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    sh = cv2.GaussianBlur(f, (0, 0), 1.2); f = cv2.addWeighted(f, 1.25, sh, -0.25, 0)
-    return bloom(f.astype(np.float32), 0.10, 205) * VIGN
+    sh = cv2.GaussianBlur(f, (0, 0), 1.2); f = cv2.addWeighted(f, 1 + LOOK['sharpen'], sh, -LOOK['sharpen'], 0)
+    return bloom(f.astype(np.float32), LOOK['bloom'], LOOK['bloom_threshold']) * VIGN
 
 def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
     if clamp:
@@ -233,10 +236,11 @@ def darken(f, a, cx, cy, al, scale=1.0):
 
 # captions bottom-centre
 def cap_sprite(big, small):
-    return text_mask(big, ImageFont.truetype(F800, 54), 10), (text_mask(small, ImageFont.truetype(F300, 24), 8) if small else None)
+    return (text_mask(big, ImageFont.truetype(F800, ST['captions']['size']), 10),
+            (text_mask(small, ImageFont.truetype(F300, ST['captions']['sub_size']), 8) if small else None))
 CAPS = [(o, cap_sprite(b, s)) for o, (b, s) in captions]
-def draw_cap(f, spr, te, cy=H - 205):
-    dur = 1.5
+def draw_cap(f, spr, te, cy=H - ST['captions']['from_bottom']):
+    dur = ST['captions']['duration']
     if te < 0 or te > dur: return
     al = ss(te / 0.2) * (1 - ss((te - dur + 0.35) / 0.35)); dy = 10 * (1 - ss(te / 0.4))
     (a, g1, g2), sub = spr
@@ -246,7 +250,8 @@ def draw_cap(f, spr, te, cy=H - 205):
         a2, g21, _ = sub; blit(f, a2, W / 2, cy + 52 + dy, (235, 235, 235), al)
 
 # ---------- logo intro ----------
-LG = cv2.imread('logo.png') if os.path.exists('logo.png') else cv2.imread(os.path.join(ENGINE, 'assets', 'logo.png')); LR = 175
+# logo.png del proyecto > logo del preset > logo genérico del motor
+LG = cv2.imdecode(np.fromfile(_preset.logo_path(ST, PROJECT), np.uint8), cv2.IMREAD_COLOR); LR = 175
 LG = cv2.resize(LG, (2 * LR, 2 * LR), interpolation=cv2.INTER_AREA).astype(np.float32)
 ly, lx = np.mgrid[0:2 * LR, 0:2 * LR].astype(np.float32); ld = np.sqrt((lx - LR + .5) ** 2 + (ly - LR + .5) ** 2)
 LMASK = np.clip(LR - ld, 0, 1)[..., None]
@@ -254,13 +259,14 @@ LOGO_C = (W / 2, 400)
 ANG = np.arctan2(yy - LOGO_C[1], xx - LOGO_C[0]); DL = np.sqrt((xx - LOGO_C[0]) ** 2 + (yy - LOGO_C[1]) ** 2)
 RING_BAND = np.exp(-((DL - (LR + 14)) / 7.0) ** 2)[..., None]
 RING_GLOW = np.exp(-((DL - (LR + 14)) / 38.0) ** 2)[..., None]
-TV = text_mask('WAKO TV', ImageFont.truetype(F800, 104), 18)
+TV = text_mask(CH['name'].upper(), ImageFont.truetype(F800, 104), 18)
 SUBT = text_mask(SONG_TITLE, ImageFont.truetype(F600, 34), 16)
-SUB2 = text_mask('M O N T A G E', ImageFont.truetype(F300, 22), 6)
+SUB2 = text_mask(CH['tagline'], ImageFont.truetype(F300, 22), 6)
+RING_COLS = [np.array(_preset.bgr(c), np.float32) for c in ST['colors']['ring']]
 def grad_col(theta):
     """purple -> magenta -> cyan gradient around the ring (BGR)"""
     u = (np.sin(theta) * 0.5 + 0.5)
-    c1 = np.array([255, 70, 145], np.float32); c2 = np.array([210, 60, 255], np.float32); c3 = np.array([255, 220, 60], np.float32)
+    c1, c2, c3 = RING_COLS
     return np.where(u[..., None] < 0.5, c1 + (c2 - c1) * (u[..., None] * 2), c2 + (c3 - c2) * ((u[..., None] - 0.5) * 2))
 def logo_ring(f, t, sweep, pulse):
     rel = (ANG + math.pi / 2) % (2 * math.pi)
@@ -389,9 +395,9 @@ def interlude(t):
     return f
 
 # ---------- outro ----------
-OUT1 = text_mask('NOS VEMOS EN EL STREAM', ImageFont.truetype(F800, 70), 10)
+OUT1 = text_mask(CH['outro_text'].upper(), ImageFont.truetype(F800, 70), 10)
 DOT = text_mask('.', ImageFont.truetype(F800, 70), 0)
-OUT2 = text_mask('twitch.tv/el_wako', ImageFont.truetype(F600, 32), 6)
+OUT2 = text_mask(CH['link'], ImageFont.truetype(F600, 32), 6)
 out_hits_o = [o for o, i in out_hits(OUTRO0, TOTAL)]
 def outro(t):
     te = t - OUTRO0; f = zeros()
@@ -412,7 +418,7 @@ def outro(t):
 
 # ---------- segment frames ----------
 def cam_center(clip): x0, y0, x1, y1 = CAM[clip]; return (x0 + x1) / 2, (y0 + y1) / 2
-FACE_Z = 2.0
+FACE_Z = ST['camera']['open_zoom']
 def slow_src(seg, t):
     a, b = seg['s0'], seg['s1']; D = seg['o1'] - seg['o0']; u = t - seg['o0']
     vmin = (b - a - 0.12) / (D - 0.12)
@@ -436,7 +442,7 @@ def seg_frame(seg, t, slot=0):
         te = t - seg['o0']
         if te < 0.45: f = f + (255 - f) * 0.85 * (1 - ss(te / 0.45))      # arrive out of the logo's glow
     elif k == 'face_out':
-        x = eio((t - seg['o0'] - 0.5) / 1.5); s = 1.75 ** x; cx, cy = cam_center(END_CLIP)
+        x = eio((t - seg['o0'] - 0.5) / 1.5); s = ST['camera']['close_zoom'] ** x; cx, cy = cam_center(END_CLIP)
         f = affine(f, s, W / 2 + (cx - W / 2) * x, H / 2 + (cy - H / 2) * x)
         f = f * (1 - ss((t - (seg['o1'] - 1.3)) / 1.3))
     if seg['play'] == 100 and t < O_DROP2:
@@ -451,9 +457,12 @@ def seg_index(t):
     for i, s in enumerate(segments):
         if s['o0'] <= t < s['o1']: return i
     return len(segments) - 1
-TW = {'mega': 0.30, 'whip_lr': 0.13, 'whip_rl': 0.13, 'light': 0.17, 'zoom': 0.13, 'whip_short': 0.075, 'light_short': 0.085}
+TW = dict(ST['transitions']['durations'])
+TI = float(ST['transitions']['intensity'])       # fuerza de las transiciones (1 = la de siempre)
+KI = float(ST['kill_fx']['intensity'])           # fuerza de los efectos de kill
+KDECAY = float(ST['kill_fx']['decay'])
 SH = np.random.default_rng(5).normal(0, 1, (N + 10, 2))
-ACE_TINTS = [(255, 220, 120), (230, 120, 255), (120, 210, 255), (255, 160, 200), (255, 240, 220)]
+ACE_TINTS = [_preset.bgr(c) for c in ST['kill_fx']['ace_tints']]
 ace_idx = {i: j for j, i in enumerate([i for i, (k, c) in enumerate(zip(kills, kill_play)) if c == ACE_CLIP])}
 
 def render_f(n):
@@ -466,16 +475,16 @@ def render_f(n):
             A = seg_frame(segments[bi - 1], t, 0); B = seg_frame(segments[bi], t, 1)
             if typ.startswith('whip'):
                 d = 1 if typ in ('whip_lr', 'whip_short') else -1
-                amp = W * (0.55 if typ != 'whip_short' else 0.35); bl = (240 if typ != 'whip_short' else 150) * math.sin(math.pi * p)
+                amp = W * (0.55 if typ != 'whip_short' else 0.35); bl = (240 if typ != 'whip_short' else 150) * math.sin(math.pi * p) * TI
                 Ab = hblur(shift(A, d * amp * eio(p)), bl); Bb = hblur(shift(B, -d * amp * (1 - eio(p))), bl)
                 m = ss((p - 0.35) / 0.3); f = (Ab * (1 - m) + Bb * m) * (1 + 0.12 * math.sin(math.pi * p))
             elif typ.startswith('light'):
-                k = math.sin(math.pi * p); m = ss((p - 0.4) / 0.2)
+                k = math.sin(math.pi * p) * TI; m = ss((p - 0.4) / 0.2)
                 f = bloom(A * (1 - m) + B * m, 1.15 * k, 140) + leak(-0.2 + 1.4 * p, 0.5 * k)
                 f = f + (255 - clip(f, 0, 255)) * 0.08 * k
             elif typ == 'mega':
                 # exaggerated full-screen hit: punch-in + chroma + streak burst on A, white flash peak, B explodes out of light
-                k = math.sin(math.pi * p); m = ss((p - 0.45) / 0.1)
+                k = math.sin(math.pi * p) * TI; m = ss((p - 0.45) / 0.1)
                 Az = radial_blur(zoom(A, 1 + 0.6 * eio(p / 0.5)), 0.22 * k, n=7)
                 Bz = radial_blur(zoom(B, 1 + 0.45 * (1 - eio((p - 0.5) / 0.5))), 0.22 * k, n=7)
                 f = Az * (1 - m) + Bz * m
@@ -485,8 +494,8 @@ def render_f(n):
                 f = f + (255 - clip(f, 0, 255)) * 0.85 * max(0, 1 - abs(p - 0.5) / 0.07)
             elif typ == 'zoom':
                 m = ss((p - 0.4) / 0.2)
-                Az = radial_blur(zoom(A, 1 + 0.35 * eio(p)), 0.16 * math.sin(math.pi * p))
-                Bz = radial_blur(zoom(B, 1 + 0.25 * (1 - eio(p))), 0.16 * math.sin(math.pi * p))
+                Az = radial_blur(zoom(A, 1 + 0.35 * eio(p)), 0.16 * math.sin(math.pi * p) * TI)
+                Bz = radial_blur(zoom(B, 1 + 0.25 * (1 - eio(p))), 0.16 * math.sin(math.pi * p) * TI)
                 f = Az * (1 - m) + Bz * m
             break
     if f is None:
@@ -503,7 +512,7 @@ def render_f(n):
         te = t - ko
         if te < -0.017 or te > 0.7: continue
         att = min(1.0, (te + 0.017) / 0.05)          # entrada en ~3 cuadros: sin saltos de un cuadro al otro (los "tirones")
-        te = max(te, 0); e = att * math.exp(-te / 0.11)
+        te = max(te, 0); e = att * math.exp(-te / KDECAY)
         shx = math.sin(2 * math.pi * 11 * te + ki); shy = math.cos(2 * math.pi * 9 * te + 2 * ki)   # sacudida suave, no ruido por cuadro
         if kill_flash[ki] == 'burst':                # ráfagas: casi sin efecto, que se vea la kill
             white += 0.07 * att * math.exp(-te / 0.05); z += 0.015 * e
@@ -544,6 +553,10 @@ def render_f(n):
         elif fx == 'flash': white += att * 0.30 * math.exp(-te / 0.05); bl += 0.5 * e
         elif fx == 'radial_zoom': z += 0.08 * e; rad += 0.06 * math.exp(-te / 0.07)
         elif fx == 'pop': pop += e; z += 0.035 * e
+    if KI != 1.0:
+        z = 1 + (z - 1) * KI; dx *= KI; dy *= KI; split *= KI; white *= KI; bl *= KI; rad *= KI; db *= KI; pop *= KI; stk *= KI
+        if lk is not None: lk = (lk[0], lk[1] * KI, lk[2])
+        rings = [(a_, b_, c_ * KI, d_) for a_, b_, c_, d_ in rings]
     if bl > 0.01: f = bloom(f, bl, 165)
     if stk > 0.01: f = streak(f, stk, stint)
     if lk is not None and lk[1] > 0.01: f = f + leak(lk[0], lk[1], lk[2])

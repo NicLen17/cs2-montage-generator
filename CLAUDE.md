@@ -95,6 +95,17 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
   cuesta ~0.5 s en Windows y se abría ~50 veces).
 - Si un render falla por memoria, bajar `--workers`.
 
+## Presets y edit.json (motor abierto a otros canales, 21/11/2026)
+- **El estilo del canal es un preset**, no constantes en el código: `presets/default.json` (todas las claves) ←
+  `presets/wako/` (este canal: nombre, link y logo; local, no va al repo) ← `"style"` del proyecto. El preset del canal se
+  elige en `config.json` (`{"preset": "wako"}`). Ver `docs/presets.md` y `python engine/preset.py`.
+- **Un edit puede ser datos**: `projects/<nombre>/edit.json` (formato en `docs/edit-json.md`); el timeline lo arma
+  `engine/planner.py`. Los proyectos con `plan.py` siguen andando igual (`engine/project.py` carga cualquiera de los dos;
+  si están los dos manda `edit.json`). `python engine/migrate.py projects/<nombre>` pasa un plan viejo y comprueba que dé lo mismo.
+- **Antes y después de tocar el motor:** `python -m pytest` (rápido) y `python engine/regress.py projects/my_jealousy_v3`
+  (imagen contra la referencia; `--device gpu` y `--cross` para CPU vs GPU). `python -m pytest --slow` suma el detector de
+  kills (F1 contra el catálogo) y la regresión de imagen.
+
 ## Reglas
 - Las preferencias del usuario están en el skill (reglas de corte, efectos, texto, audio). No las cambies sin que lo pida.
 - No poner letras de canciones en pantalla.

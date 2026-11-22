@@ -1,6 +1,5 @@
 {
  "version": 1,
- "preset": "default",
  "fps": 60,
  "song": {"title": "MY JEALOUSY", "start": 8.04726834068453, "drop1": 16.048383364236663, "drop2": 112.06176364686226, "sync": []},
  "open": {"clip": 12, "end": 17.55},

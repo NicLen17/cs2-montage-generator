@@ -37,7 +37,6 @@ def to_edit(m):
     g = lambda k, d=None: getattr(m, k, d)
     edit = {
         'version': planner.VERSION,
-        'preset': 'default',
         'fps': int(m.FPS),
         'song': {'title': g('SONG_TITLE', ''), 'start': float(m.SONG_A0), 'drop1': float(m.grid[m.IDX_DROP]),
                  'drop2': float(m.grid[m.I_DROP2]), 'sync': planner._plain(g('SYNC', []))},

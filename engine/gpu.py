@@ -50,7 +50,7 @@ void main(){ vec3 a = am == 1 ? texelFetch(A, P(), 0).rrr : texelFetch(A, P(), 0
     # curva (LUT) + saturación x1.15 en HSV de 8 bits, igual que cv2.LUT + cvtColor + convertScaleAbs
     'grade': """
 uniform sampler2D U; uniform sampler2D Yt; uniform sampler2D UVt; uniform int nv12;
-uniform sampler2D L; uniform int sdiv[256]; uniform int hdiv[256];
+uniform sampler2D L; uniform int sdiv[256]; uniform int hdiv[256]; uniform float sat;
 ivec3 src(){ ivec2 p = P();
   if (nv12 == 0) return ivec3(roundEven(texelFetch(U, p, 0).rgb * 255.0));
   // YUV 4:2:0 -> BGR como swscale (lo que usa OpenCV): BT.601 rango limitado, croma del vecino, punto fijo
@@ -66,7 +66,7 @@ void main(){ ivec3 c = src();
   int s = (diff * sdiv[v] + (1 << 11)) >> 12;
   int h = (vr & (g - b)) + (~vr & ((vg & (b - r + 2 * diff)) + ((~vg) & (r - g + 4 * diff))));
   h = (h * hdiv[diff] + (1 << 11)) >> 12; h += h < 0 ? 180 : 0;
-  s = int(clamp(roundEven(float(s) * 1.15), 0.0, 255.0));
+  s = int(clamp(roundEven(float(s) * sat), 0.0, 255.0));
   float S = float(s) * (1.0 / 255.0), V = float(v) * (1.0 / 255.0), fb, fg, fr;
   if (s == 0) { fb = fg = fr = V; }
   else { float hh = float(h) * (6.0 / 180.0); if (hh >= 6.0) hh -= 6.0; int sec = int(floor(hh)); hh -= float(sec);
@@ -159,11 +159,11 @@ void main(){ ivec2 j = P() - org;
   else { vec3 img = bl(S, inv, j); float m = bl(M, minv, j).r; o = vec4(img * al, m * al); } }""",
     'logo_ring': """
 uniform sampler2D Bt; uniform vec2 c; uniform float lr; uniform float sweep; uniform float t; uniform float gk;
+uniform vec3 c1; uniform vec3 c2; uniform vec3 c3;
 void main(){ vec2 q = vec2(P()) - c; float ang = atan(q.y, q.x), dl = sqrt(dot(q, q));
   float e1 = (dl - (lr + 14.0)) / 7.0, e2 = (dl - (lr + 14.0)) / 38.0;
   float rel = mod(ang + 1.5707963267948966, 6.283185307179586); float on = rel <= sweep ? 1.0 : 0.0;
   float u = sin(ang + t * 1.6) * 0.5 + 0.5;
-  vec3 c1 = vec3(255.0, 70.0, 145.0), c2 = vec3(210.0, 60.0, 255.0), c3 = vec3(255.0, 220.0, 60.0);
   vec3 col = u < 0.5 ? c1 + (c2 - c1) * (u * 2.0) : c2 + (c3 - c2) * ((u - 0.5) * 2.0);
   o = vec4(texelFetch(Bt, P(), 0).rgb + exp(-e1 * e1) * on * col + exp(-e2 * e2) * on * col * gk, 0.0); }""",
     # círculo suavizado (cv2.circle LINE_AA, relleno) pintado encima con su cobertura
@@ -446,13 +446,15 @@ def _warp(f, M, cubic, zero=False):
 # ---------------------------------------------------------------- versiones GPU de las funciones de render.py
 LUT_T = None
 VIGN_G = None
+LOOK = None
 _SDIV = [0] + [int(round((255 << 12) / i)) for i in range(1, 256)]
 _HDIV = [0] + [int(round((180 << 12) / (6.0 * i))) for i in range(1, 256)]
 
 
 def setup(R):
     """Sube las tablas fijas de render.py (curva de color, viñeta)."""
-    global LUT_T, VIGN_G
+    global LUT_T, VIGN_G, LOOK
+    LOOK = R['LOOK']
     lut = R['LUT'].reshape(256, 3).astype(np.float32)
     rgba = np.zeros((1, 256, 4), np.float32)
     rgba[0, :, :3] = lut
@@ -485,10 +487,10 @@ def streak(f, amount, tint):
 
 def grade(f8):
     tex, nv = upload(f8)
-    c = G(_run('grade', (W, H), tex + (('L', LUT_T),), nv12=nv))
+    c = G(_run('grade', (W, H), tex + (('L', LUT_T),), nv12=nv, sat=float(LOOK['saturation'])))
     sh = gauss(c, 1.2, u8=True)
-    f = G(_run('bin', (W, H), (('A', c.t), ('B', sh.t)), am=0, bm=0, op=4, k=(1.25, -0.25)))
-    return bloom(f, 0.10, 205) * VIGN_G
+    f = G(_run('bin', (W, H), (('A', c.t), ('B', sh.t)), am=0, bm=0, op=4, k=(1 + LOOK['sharpen'], -LOOK['sharpen'])))
+    return bloom(f, LOOK['bloom'], LOOK['bloom_threshold']) * VIGN_G
 
 
 def affine(f, s, cx, cy, dx=0.0, dy=0.0, clamp=True):
@@ -597,7 +599,8 @@ def paste_avatar(f, R, sc, al):
 def logo_ring(f, t, sweep, pulse, R):
     cx, cy = R['LOGO_C']
     return G(_run('logo_ring', (W, H), (('Bt', f.t),), c=(float(cx), float(cy)), lr=float(R['LR']), sweep=float(sweep),
-                  t=float(t), gk=0.35 + 0.35 * pulse))
+                  t=float(t), gk=0.35 + 0.35 * pulse, c1=tuple(map(float, R['RING_COLS'][0])),
+                  c2=tuple(map(float, R['RING_COLS'][1])), c3=tuple(map(float, R['RING_COLS'][2]))))
 
 
 def orbs(t, R):

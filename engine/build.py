@@ -108,13 +108,29 @@ def ensure_slowmo(project, plan):
     print(f'Cámaras lentas listas en {time.time() - t:.0f}s')
 
 
+STYLE_KEY = ''          # huella del estilo (preset + logo): si cambia, se vuelve a renderizar
+
+
+def load_style(project, plan):
+    """Carga el preset del proyecto y deja su huella para el caché de pedazos."""
+    global STYLE_KEY
+    import preset
+    st = preset.for_plan(plan)
+    TW.update(st['transitions']['durations'])
+    logo = preset.logo_path(st, project)
+    globals()['AUDIO_STYLE'] = json.dumps(st['audio'], sort_keys=True)
+    STYLE_KEY = hashlib.sha1((json.dumps({k: v for k, v in st.items() if k not in ('_dir', 'audio', 'cuts')}, sort_keys=True)
+                              + _file_hash(logo) + _file_hash(os.path.join(ENGINE, 'gpu.py'))).encode()).hexdigest()[:12]
+    return st
+
+
 def chunk_key(plan, a, b, enc=''):
     """Huella de un pedazo: si no cambió nada que afecte esos cuadros (ni el codificador/bitrate), se reusa."""
     t0, t1 = a / plan.FPS - 1.0, b / plan.FPS + 1.0
     segs = [s for s in plan.segments if s['o1'] > t0 and s['o0'] < t1]
     kills = [k for k in plan.kills if t0 - 1 <= k <= t1]
     caps = [c for c in plan.captions if t0 - 2 <= c[0] <= t1]
-    payload = json.dumps([segs, kills, caps, [b_ for b_ in plan.boundaries if t0 <= b_[0] <= t1],
+    payload = json.dumps([segs, kills, caps, [b_ for b_ in plan.boundaries if t0 <= b_[0] <= t1], STYLE_KEY,
                           getattr(plan, 'WORDS', []), _file_hash(os.path.join(ENGINE, 'render.py')),
                           _file_hash(os.path.join(ENGINE, 'encoders.py')), enc], default=str, sort_keys=True)
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
@@ -176,6 +192,7 @@ def _file_hash(p):
     return hashlib.sha1(open(p, 'rb').read()).hexdigest()[:12]
 
 
+AUDIO_STYLE = ''         # la parte de audio del preset: si cambia, se vuelve a mezclar
 AUDIO_OUT = ('work_audio.wav', 'audio_balance.txt', 'render_log.txt', 'check_render.txt', 'borrador.mp4', 'audio.key')
 
 
@@ -183,6 +200,7 @@ def _audio_key(project):
     """Huella de todo lo que usa audio.py: el plan y los datos del proyecto, los clips, las voces separadas, la canción
     y los scripts de audio. Si no cambió nada, se reusa work_audio.wav (la mezcla tarda ~40 s)."""
     h = hashlib.sha1()
+    h.update(AUDIO_STYLE.encode())
     for name in ('audio.py', 'reactions.py'):
         p = os.path.join(ENGINE, name)
         if os.path.exists(p):
@@ -246,7 +264,8 @@ def main():
     except Exception: pass
     ap = argparse.ArgumentParser()
     ap.add_argument('project'); ap.add_argument('--preview'); ap.add_argument('--workers', type=int)
-    ap.add_argument('--name'); ap.add_argument('--bitrate', type=int, default=30); ap.add_argument('--only')
+    ap.add_argument('--name'); ap.add_argument('--bitrate', type=int, help='Mbps (por defecto, el del preset: 30)')
+    ap.add_argument('--only')
     ap.add_argument('--no-check', action='store_true', help='no correr check_render.py al terminar')
     ap.add_argument('--draft', action='store_true', help='borrador rápido 960x540 a 30 fps en projects/<nombre>/borrador.mp4')
     ap.add_argument('--device', choices=['auto', 'gpu', 'cpu'], default=os.environ.get('WAKO_DEVICE', 'auto'),
@@ -254,6 +273,9 @@ def main():
     args = ap.parse_args()
     project = os.path.abspath(args.project)
     plan = load_plan(project)
+    style = load_style(project, plan)
+    if args.bitrate is None: args.bitrate = int(style['output']['bitrate'])
+    print('Estilo:', style['name'])
     device, gpu_name = resolve_device(args.device)
     os.environ['WAKO_DEVICE'] = device          # los procesos de render lo heredan
     print('Dispositivo:', f'GPU ({gpu_name})' if device == 'gpu' else 'CPU')

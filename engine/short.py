@@ -83,7 +83,13 @@ def candidates(p, dur):
     return sorted(out, key=lambda c: -c['score'])
 
 
-def overlay_png(path, title, layout, text=True):
+def _channel(p):
+    import preset
+    return preset.for_plan(p)['channel']
+
+
+def overlay_png(path, title, layout, text=True, channel=None):
+    channel = channel or {'name': '', 'link': ''}
     im = Image.new('RGBA', (1080, 1920), (0, 0, 0, 0))
     if text and layout == 'fit':
         d = ImageDraw.Draw(im)
@@ -93,9 +99,9 @@ def overlay_png(path, title, layout, text=True):
             for ch in txt: ds.text((xx, y + 4), ch, font=font, fill=(0, 0, 0, 170)); xx += font.getlength(ch) + spacing
             im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(6)))
             for ch in txt: d.text((x, y), ch, font=font, fill=fill); x += font.getlength(ch) + spacing
-        center('WAKO TV', ImageFont.truetype(F800, 96), 360, (255, 255, 255, 255), 10)
+        center(channel['name'].upper(), ImageFont.truetype(F800, 96), 360, (255, 255, 255, 255), 10)
         center(title.upper(), ImageFont.truetype(F600, 40), 485, (225, 205, 255, 255), 8)
-        center('twitch.tv/el_wako', ImageFont.truetype(F600, 40), 1380, (255, 255, 255, 235), 4)
+        if channel.get('link'): center(channel['link'], ImageFont.truetype(F600, 40), 1380, (255, 255, 255, 235), 4)
     im.save(path)
 
 
@@ -159,7 +165,7 @@ def render_short(p, project, video, t0, t1, layout, text, out, sheet):
     D = t1 - t0
     if D > 60: print(f'Aviso: {D:.0f} s pasa de 60 s (algunas plataformas lo toman como video normal).')
     print(f'Short: {fmt(t0)} → {fmt(t1)} ({D:.1f} s), layout {layout} → {os.path.basename(out)}', flush=True)
-    ov = os.path.join(project, f'short_overlay_{os.path.basename(out)}.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), layout, text)
+    ov = os.path.join(project, f'short_overlay_{os.path.basename(out)}.png'); overlay_png(ov, getattr(p, 'SONG_TITLE', ''), layout, text, _channel(p))
     fo = max(0.0, D - 1.0)
     if layout == 'fit':
         fc = ('[0:v]split[a][b];'

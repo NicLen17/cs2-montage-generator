@@ -31,3 +31,7 @@ tools/
 # Referencias locales de las pruebas (salen de clips privados: cada uno genera las suyas)
 tests/ref/
 .pytest_cache/
+
+# Configuración y presets propios de cada canal (el repo trae solo presets/default.json y los de la comunidad)
+config.json
+presets/wako/
