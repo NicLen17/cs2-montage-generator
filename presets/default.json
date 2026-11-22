@@ -19,7 +19,8 @@
   "sharpen": 0.25,
   "bloom": 0.10,
   "bloom_threshold": 205,
-  "vignette": 0.26
+  "vignette": 0.26,
+  "auto_exposure": 0.0
  },
  "captions": {
   "size": 54,

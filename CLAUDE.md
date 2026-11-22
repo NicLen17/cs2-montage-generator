@@ -107,6 +107,12 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
   no trae `song.sync`; aciertan el beat exacto 4 de cada 5 veces, así que `check_kills.py` los muestra como avisos y hay que
   confirmarlos a oído) y `vocal_hits.json`. `python engine/words.py projects/<nombre>` (opcional, faster-whisper) da el
   tiempo de cada palabra para ubicar golpes de voz; **no** detecta sílabas recortadas y nunca se usa para poner letra en pantalla.
+- **Sin Claude:** `python engine/auto.py <carpeta o proyecto>` arma `edit.json` solo (puntaje de plays de `engine/score.py`) y
+  renderiza un borrador; `python engine/ui/server.py` abre el editor web local (kills, línea de tiempo, estilo, render paso a
+  paso con `status.json`). Son puntos de partida: el flujo de las skills sigue siendo el de mejor resultado.
+- **Detector (Fase 3):** `shots_conf.json` marca los disparos no encontrados (`sheets/disparos_dudosos.jpg`), `kf_conf.json`
+  trae el tipo de kill, `python engine/catalog.py list --sort score` ordena por puntaje y `channel.player` del preset fija el
+  nick. `python engine/doctor.py` diagnostica la instalación.
 - **Antes y después de tocar el motor:** `python -m pytest` (rápido) y `python engine/regress.py projects/my_jealousy_v3`
   (imagen contra la referencia; `--device gpu` y `--cross` para CPU vs GPU). `python -m pytest --slow` suma el detector de
   kills (F1 contra el catálogo) y la regresión de imagen.

@@ -51,9 +51,28 @@ Además arma las miniaturas en tres estilos, basados en las más vistas de canal
 git clone https://github.com/NicLen17/wako-edits.git
 ```
 
-1. **Instalá:** en Windows, doble clic en `setup_windows.bat` (Python, ffmpeg, librerías y Demucs).
-2. **Dejá los clips y la canción** en `entrada/` (clips `.mp4` a 1080p, canción `.mp3`, `.wav` o `.m4a`).
-3. **Abrí la carpeta en Claude Code** y pedí:
+**Instalá** con `install.ps1` en Windows (o doble clic en `setup_windows.bat`) o `./install.sh` en Linux y macOS: arma el
+entorno, detecta tu placa de video y te dice cómo va a renderizar. Detalle y problemas frecuentes en
+[docs/instalacion.md](docs/instalacion.md); `python engine/doctor.py` muestra el diagnóstico cuando quieras.
+
+Después hay tres formas de usarlo, sobre el mismo motor y los mismos archivos:
+
+**1. Un comando.** Clips `.mp4` y una canción en una carpeta, y sale un borrador:
+
+```bash
+python engine/auto.py entrada
+```
+
+Analiza la canción y los clips, elige y ordena las mejores plays y renderiza. Con `--final` hace el video en 1080p60.
+
+**2. El editor web** (opcional), para ajustar cortes, títulos, transiciones y estilo, y ver el render paso a paso:
+
+```bash
+python engine/ui/server.py
+```
+
+**3. Con Claude Code**, que es como sale el mejor resultado: revisa las kills dudosas, confirma los drops a oído y
+arma además shorts, miniatura y textos. Abrí la carpeta en Claude Code, dejá los clips y la canción en `entrada/` y pedí:
 
 ```
 /cs2-pack
@@ -125,6 +144,8 @@ Las reglas de edición del canal viven en `.claude/skills/` y los scripts de `en
 
 ## Notas
 
-- **Música:** la canción la ponés vos. Casi todas las comerciales generan un reclamo de Content ID en YouTube. La letra nunca va en pantalla.
+- **Música:** la canción la ponés vos. Casi todas las comerciales generan un reclamo de Content ID en YouTube. La letra nunca va en pantalla. Leé [docs/musica-y-derechos.md](docs/musica-y-derechos.md) antes de publicar.
 - **Tus archivos:** los clips se copian al proyecto y los originales no se tocan. Los videos y clips no se suben al repo.
-- **Otro canal:** las reglas son las de WAKO TV ([twitch.tv/el_wako](https://twitch.tv/el_wako)). Para usarlo con el tuyo, cambiá §0 de `.claude/skills/cs2-edit/SKILL.md`, el logo y los textos de `engine/render.py`.
+- **Tu canal:** el nombre, el logo, los colores y el estilo son un preset, no código. Creá `presets/<tucanal>/preset.json`, elegilo en `config.json` y listo: [docs/presets.md](docs/presets.md). Solo CS2 por ahora.
+- **Qué está probado:** Windows con placa AMD. NVIDIA, Intel, Linux y macOS están implementados pero sin probar en hardware real ([tabla](docs/instalacion.md)); si lo corrés ahí, contá cómo te fue.
+- **Para aportar:** [CONTRIBUTING.md](CONTRIBUTING.md) y [docs/extender.md](docs/extender.md). Formato de un edit: [docs/edit-json.md](docs/edit-json.md). Licencia [MIT](LICENSE).

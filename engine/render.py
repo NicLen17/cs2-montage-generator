@@ -109,6 +109,20 @@ class LazyRD(dict):
         return super().__getitem__(key)
 RD = LazyRD()
 SLOWS = {c: (RDR(p), t0) for c, (p, t0) in SLOWMO_SRC.items()}
+# Exposición pareja entre clips (look.auto_exposure, apagado por defecto): cada clip se lleva hacia un brillo medio común,
+# así un clip oscuro (Nuke, Ancient) no queda apagado al lado de uno al sol. 1 = iguala del todo; el ajuste nunca pasa de ±25 %.
+AUTO_EXP = float(LOOK.get('auto_exposure') or 0.0)
+_CLIP_GAIN = {}
+def clip_gain(c):
+    if c not in _CLIP_GAIN:
+        cap = cv2.VideoCapture(f'clips/c{c}.mp4'); n = int(cap.get(7)); vals = []
+        for i in np.linspace(n * 0.15, n * 0.85, 7).astype(int):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(i)); ok, fr = cap.read()
+            if ok: vals.append(float(cv2.cvtColor(cv2.resize(fr, (160, 90)), cv2.COLOR_BGR2GRAY).mean()))
+        cap.release()
+        m = float(np.median(vals)) if vals else 105.0
+        _CLIP_GAIN[c] = float(min(1.25, max(0.8, (105.0 / max(1.0, m)) ** AUTO_EXP)))
+    return _CLIP_GAIN[c]
 def frame(seg, t, slot=0):
     return RD[(seg['clip'], slot)].get(round((seg['s0'] + (t - seg['o0'])) * FPS))
 
@@ -435,6 +449,9 @@ def seg_frame(seg, t, slot=0):
         mean = chmean(f); f = mean + (f - mean) * (1 - 0.35 * ss(u / 0.4))   # slight desaturation
         return f * (1 - 0.15 * ss(u / 0.4))
     f = grade(frame(seg, t, slot))
+    if AUTO_EXP and seg['clip']:
+        g_ = clip_gain(seg['clip'])
+        if abs(g_ - 1) > 0.01: f = f * g_
     if k == 'zoom_out':
         x = eio((t - seg['o0']) / 1.1); s = FACE_Z ** (1 - x); cx, cy = cam_center(OPEN_CLIP)
         f = affine(f, s, cx + (W / 2 - cx) * x, cy + (H / 2 - cy) * x)

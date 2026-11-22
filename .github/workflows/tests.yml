@@ -1,0 +1,28 @@
+name: pruebas
+on:
+  push:
+  pull_request:
+jobs:
+  pytest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsndfile1
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: Dependencias
+        run: python -m pip install -r requirements.txt pytest
+      # Las pruebas que necesitan clips o el catálogo se saltean solas: en CI corren el planificador, los presets,
+      # el servidor del editor y el análisis de canción con audio sintético (--slow).
+      - name: Pruebas
+        run: python -m pytest --slow -q

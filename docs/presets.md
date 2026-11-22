@@ -70,6 +70,7 @@ mezclado con el default. Una clave mal escrita da error con la lista de las vál
 | Clave | Qué hace al encenderla |
 |---|---|
 | `kill_fx.energy_follow` | `0` = todos los efectos de kill con la misma fuerza. Con `1`, el efecto acompaña a la canción: la mitad de fuerza en las partes calmas y hasta 1.5 en lo más alto (usa `song.json` de `analyze_song.py`) |
+| `look.auto_exposure` | `0` = cada clip con su brillo. Hasta `1`, los clips oscuros y los muy claros se acercan a un brillo medio común (el ajuste nunca pasa de ±25 %) |
 | `audio.loudness.target_lufs` | `null` = tan fuerte como deje el pico (unos −10 LUFS). Con un número (YouTube normaliza a `-14`) la mezcla se lleva a ese loudness, medido con EBU R128 |
 | `audio.loudness.shorts_lufs` | Lo mismo para los shorts verticales (`null` = el volumen del edit largo) |
 | `audio.loudness.true_peak` | Techo del pico real en dBTP (`-1.5`) |
