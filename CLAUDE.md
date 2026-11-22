@@ -23,8 +23,9 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
    `python engine/analyze_clips.py projects/<nombre> --shots` y
    `python engine/catalog.py import projects/<nombre>` (guardar lo verificado en el catálogo) y
    `python engine/reactions.py projects/<nombre> --all` (festejos grupales al final de cada play, con Demucs; ver skill §8).
-4. Escribir `projects/<nombre>/plan.py` copiando `projects/my_jealousy_v3/plan.py` y cambiando solo los datos
-   (leer antes `.claude/skills/cs2-edit/references/plan.md`). Correr `python projects/<nombre>/plan.py` y revisar residuos y avisos.
+4. Escribir `projects/<nombre>/edit.json` (leer antes `.claude/skills/cs2-edit/references/plan.md`): partir de
+   `python engine/auto.py projects/<nombre> --plan-only` o de `projects/my_jealousy_v3/edit.json` y aplicar las reglas del skill.
+   Correr `python engine/planner.py projects/<nombre>` y revisar residuos y avisos. (Los proyectos viejos siguen con su `plan.py`.)
 5. `python engine/check_kills.py projects/<nombre>` → sin problemas, sin avisos de TIEMPO MUERTO sin justificar y con
    los avisos del KILLFEED revisados (kills que el killfeed muestra y no están en `kf.json`).
 6. Previews: `python engine/build.py projects/<nombre> --preview t1,t2,...` → mirar `projects/<nombre>/previews/`.
