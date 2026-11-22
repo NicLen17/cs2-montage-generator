@@ -72,15 +72,10 @@ MAPS = {'MIRAGE', 'DUST2', 'DUST 2', 'INFERNO', 'NUKE', 'ANCIENT', 'ANUBIS', 'VE
 
 def plan_info(project):
     """(clips usados, {clip: (título, subtítulo)}) leídos del plan, si hay plan."""
-    p = os.path.join(project, 'plan.py')
-    if not os.path.exists(p): return set(), {}
+    import project as _project
+    if not _project.has_plan(project): return set(), {}
     try:
-        spec = importlib.util.spec_from_file_location('plan_cat', p)
-        cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-        m = importlib.util.module_from_spec(spec)
-        with contextlib.redirect_stdout(io.StringIO()):
-            spec.loader.exec_module(m)
-        os.chdir(cwd)
+        m = _project.load_plan(project, quiet=True)
         caps = {}
         for P in list(m.ACT1) + list(m.ACT2):
             if not P.get('cap'): continue

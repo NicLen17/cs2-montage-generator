@@ -14,6 +14,7 @@ projects/*
 !projects/my_jealousy_v3/
 projects/my_jealousy_v3/*
 !projects/my_jealousy_v3/plan.py
+!projects/my_jealousy_v3/edit.json
 !projects/my_jealousy_v3/kf.json
 !projects/my_jealousy_v3/shots.json
 !projects/my_jealousy_v3/grid.npy

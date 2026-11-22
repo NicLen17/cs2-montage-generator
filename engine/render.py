@@ -6,7 +6,8 @@ sys.argv = [sys.argv[0]] + sys.argv[2:]
 import cv2, numpy as np, subprocess, math
 from encoders import video_encoder_args
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from plan import *
+import project as _project
+globals().update(_project.plan_globals(PROJECT))      # edit.json o plan.py: mismos nombres
 
 W, H = 1920, 1080
 FD = os.path.join(ENGINE, 'assets', 'fonts') + os.sep

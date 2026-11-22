@@ -32,11 +32,10 @@ TW = {'mega': 0.30, 'whip_lr': 0.13, 'whip_rl': 0.13, 'light': 0.17, 'zoom': 0.1
 
 
 def load_plan(project):
-    spec = importlib.util.spec_from_file_location('plan', os.path.join(project, 'plan.py'))
-    cwd = os.getcwd(); os.chdir(project); sys.path.insert(0, project)
-    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-    os.chdir(cwd)
-    return m
+    """edit.json (datos, lo arma planner.py) o, en proyectos anteriores, plan.py: ver engine/project.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project as _project
+    return _project.load_plan(project)
 
 
 def run(cmd, **kw):

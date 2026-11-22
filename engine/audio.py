@@ -5,7 +5,9 @@ sys.argv = [sys.argv[0]] + sys.argv[2:]
 import numpy as np, subprocess, json
 from scipy.signal import butter, sosfiltfilt
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
-from plan import *
+sys.path.insert(0, ENGINE)
+import project as _project
+globals().update(_project.plan_globals(PROJECT))      # edit.json o plan.py: mismos nombres
 SR = 48000
 # Mezcla 2 (20/11/2026, pedido del usuario: "los tiros y headshots siguen muy bajos, la música predomina demasiado").
 # AUDIO_MIX = 1 en el plan vuelve a la mezcla vieja. Los valores se pueden subir desde el plan; no se bajan sin pedido.

@@ -1,0 +1,37 @@
+{
+ "version": 1,
+ "preset": "default",
+ "fps": 60,
+ "song": {"title": "MY JEALOUSY", "start": 8.04726834068453, "drop1": 16.048383364236663, "drop2": 112.06176364686226, "sync": []},
+ "open": {"clip": 12, "end": 17.55},
+ "close": {"clip": 30, "len": 6.0},
+ "outro_len": 4.4,
+ "ace_clip": 4,
+ "cam": {"12": [0, 0, 461, 259], "30": [24, 18, 487, 288]},
+ "reveal": false,
+ "act1": [
+  {"clip": 16, "hard": [0], "segs": [{"kill": 0, "end": 6.85, "lead": 1.6, "kills": [0, 1]}]},
+  {"clip": 5, "hard": [2], "flash": [2], "segs": [{"kill": 0, "end": 3.0, "lead": 1.6, "kills": [0]}, {"kill": 1, "end": 7.0, "lead": 0.9, "kills": [1]}, {"kill": 2, "end": 20.2, "lead": 1.8, "kills": [2]}]},
+  {"clip": 27, "kill_at": 32.06, "segs": [{"kill": 0, "end": 13.85, "lead": 1.2, "kills": [0, 1, 2]}]},
+  {"clip": 23, "segs": [{"kill": 0, "end": 6.7, "lead": 1.3, "kills": [0, 1]}]},
+  {"clip": 11, "segs": [{"kill": 0, "end": 6.25, "lead": 1.2, "kills": [0, 1]}, {"kill": 2, "end": 11.7, "lead": 0.9, "kills": [2]}]},
+  {"clip": 18, "segs": [{"kill": 0, "end": 4.4, "lead": 1.6, "kills": [0]}, {"kill": 1, "end": 8.6, "lead": 1.0, "kills": [1, 2]}]},
+  {"clip": 13, "cap": ["4K", "AK-47"], "hard": [0, 1, 2], "segs": [{"kill": 0, "end": 6.1, "lead": 1.9, "kills": [0, 1]}, {"kill": 2, "end": 13.55, "lead": 1.6, "kills": [2, 3]}]},
+  {"clip": 29, "cap": ["ACE", "USP-S"], "kill_at": 64.06, "segs": [{"kill": 3, "end": 19.1, "lead": 2.6, "kills": [0, 1, 2, 3, 4]}]},
+  {"clip": 21, "cap": ["4K", "AK-47"], "hard": [0, 2], "segs": [{"kill": 0, "end": 4.4, "lead": 1.2, "kills": [0]}, {"kill": 1, "end": 19.2, "lead": 0.9, "kills": [1, 2]}, {"kill": 3, "end": 24.3, "lead": 0.9, "kills": [3]}]},
+  {"clip": 17, "segs": [{"kill": 0, "end": 4.85, "lead": 1.3, "kills": [0]}]},
+  {"clip": 28, "tin": "mega", "kill_at": 80.06, "segs": [{"kill": 0, "end": 7.95, "lead": 1.2, "kills": [0, 1, 2]}]},
+  {"clip": 2, "cap": ["ACE", "M4A1-S"], "flash": [4], "segs": [{"kill": 1, "end": 4.55, "lead": 3.1, "kills": [0, 1]}, {"kill": 2, "end": 27.15, "lead": 1.3, "kills": [2]}, {"kill": 3, "end": 29.65, "lead": 1.3, "kills": [3]}, {"kill": 4, "end": 34.4, "lead": 1.3, "kills": [4]}]},
+  {"clip": 8, "cap": ["ACE", "AK-47"], "kill_at": 96.06, "segs": [{"kill": 0, "end": 6.1, "lead": 1.2, "kills": [0, 1]}, {"kill": 2, "end": 12.75, "lead": 1.4, "kills": [2]}, {"kill": 3, "end": 18.05, "lead": 1.4, "kills": [3]}, {"kill": 4, "end": 34.95, "lead": 1.4, "kills": [4]}]}
+ ],
+ "act2": [
+  {"burst": [[4, 0], [4, 1], [4, 2], [4, 3], [4, 4]], "at": [112.06, 113.04, 114.04, 114.79, 116.05], "pre": 0.25, "sync": 0.0, "fx": false, "tail": 0.9, "cap": ["ACE", "M4A1-S"]},
+  {"clip": 22, "segs": [{"kill": 0, "end": 6.8, "lead": 1.2, "kills": [0]}]},
+  {"burst": [[9, 1], [20, 0], [25, 0], [14, 0], [24, 2], [10, 2], [26, 2], [25, 3]], "at": [120.99, 121.34, 121.75, 122.0, 122.36, 122.7, 123.25, 123.52], "pre": 0.14},
+  {"clip": 3, "cap": ["CLUTCH 1v4", "MIRAGE"], "flash": [3], "segs": [{"kill": 0, "end": 2.15, "lead": 1.0, "kills": [0]}, {"kill": 1, "end": 30.75, "lead": 0.6, "kills": [1, 2]}, {"kill": 3, "end": 33.6, "lead": 0.7, "kills": [3]}]},
+  {"clip": 30, "cap": ["4K", "AWP"], "beats": [null, null, null, [1, 3]], "segs": [{"kill": 0, "end": 3.6, "lead": 1.4, "kills": [0]}, {"kill": 1, "end": 23.45, "lead": 0.9, "kills": [1]}, {"kill": 2, "end": 30.15, "lead": 0.9, "kills": [2]}, {"kill": 3, "end": 34.1, "lead": 0.9, "kills": [3]}]}
+ ],
+ "transitions": ["whip_lr", "light", "whip_lr", "zoom", "light", "whip_lr", "light", "whip_rl"],
+ "kill_fx": ["bloom", "chroma_zoom", "shake_blur", "flash", "radial_zoom", "pop"],
+ "kill_fx_bright": false
+}

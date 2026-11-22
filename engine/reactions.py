@@ -35,19 +35,15 @@ kf = {int(k): v for k, v in json.load(open(os.path.join(PROJECT, 'kf.json'))).it
 
 
 def plan_clips():
-    sys.path.insert(0, PROJECT); cwd = os.getcwd(); os.chdir(PROJECT)
-    argv = sys.argv; sys.argv = [argv[0]]
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            import plan
-        return sorted({s['clip'] for s in plan.segments if s['kind'] not in ('logo', 'interlude', 'outro') and s['clip']})
-    finally:
-        os.chdir(cwd); sys.argv = argv
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project as _project
+    plan = _project.load_plan(PROJECT, quiet=True)
+    return sorted({s['clip'] for s in plan.segments if s['kind'] not in ('logo', 'interlude', 'outro') and s['clip']})
 
 
 if args.clips:
     clips = [int(c) for c in args.clips.split(',')]
-elif args.all or not os.path.exists(os.path.join(PROJECT, 'plan.py')):
+elif args.all or not (os.path.exists(os.path.join(PROJECT, 'plan.py')) or os.path.exists(os.path.join(PROJECT, 'edit.json'))):
     clips = sorted(c for c in kf if kf[c] and os.path.exists(os.path.join(PROJECT, 'clips', f'c{c}.mp4')))
 else:
     clips = plan_clips()
