@@ -34,7 +34,7 @@ def load_plan(project):
 # Máximos de tiempo muerto (skill cs2-edit §3, "Tiempos muertos"). Son techos: más que esto, sin una razón en la ronda, se siente lento.
 PRE_MAX = {'primera': 1.6, 'normal': 1.3, 'poco visible': 1.8}      # desde el inicio de la toma hasta la 1.ª kill de la toma
 POST_MAX = {'normal': 0.9, 'poco visible': 1.6}                      # después de la última kill de la toma (+ media transición)
-GAP_MAX = 2.0                                                        # entre dos kills de la misma toma continua
+GAP_MAX = 3.5                                                        # entre dos kills de la misma toma continua (SKILL §3: con 3.5 s o menos va de corrido)
 # Cortes que saltean casi nada (pedido del 20/11/2026, ACE de Mirage en paparazzi_v2 1:35): los cortes entre kills
 # salteaban 0.45 y 0.62 s del clip y cada uno llevaba su transición; no ahorraban nada y cortaban la inmersión.
 # Un corte dentro de una misma play tiene que saltear MÁS de MIN_SKIP del clip; si no, los tramos van unidos.
