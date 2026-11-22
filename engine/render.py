@@ -459,8 +459,10 @@ def seg_index(t):
     return len(segments) - 1
 TW = dict(ST['transitions']['durations'])
 TI = float(ST['transitions']['intensity'])       # fuerza de las transiciones (1 = la de siempre)
-KI = float(ST['kill_fx']['intensity'])           # fuerza de los efectos de kill
+KI_BASE = float(ST['kill_fx']['intensity'])      # fuerza de los efectos de kill
 KDECAY = float(ST['kill_fx']['decay'])
+KFOLLOW = float(ST['kill_fx']['energy_follow'])  # 0 = todos los efectos igual; 1 = mitad de fuerza en lo calmo, 1.5 en lo más alto
+KENERGY = globals().get('KILL_ENERGY') if KFOLLOW else None
 SH = np.random.default_rng(5).normal(0, 1, (N + 10, 2))
 ACE_TINTS = [_preset.bgr(c) for c in ST['kill_fx']['ace_tints']]
 ace_idx = {i: j for j, i in enumerate([i for i, (k, c) in enumerate(zip(kills, kill_play)) if c == ACE_CLIP])}
@@ -553,6 +555,10 @@ def render_f(n):
         elif fx == 'flash': white += att * 0.30 * math.exp(-te / 0.05); bl += 0.5 * e
         elif fx == 'radial_zoom': z += 0.08 * e; rad += 0.06 * math.exp(-te / 0.07)
         elif fx == 'pop': pop += e; z += 0.035 * e
+    KI = KI_BASE
+    if KENERGY:          # el efecto acompaña a la canción: la última kill que entró manda
+        act = [ki for ki, ko in enumerate(kills) if -0.017 <= t - ko <= 0.7]
+        if act: KI = KI_BASE * (1 + KFOLLOW * (KENERGY[act[-1]] - 0.5))
     if KI != 1.0:
         z = 1 + (z - 1) * KI; dx *= KI; dy *= KI; split *= KI; white *= KI; bl *= KI; rad *= KI; db *= KI; pop *= KI; stk *= KI
         if lk is not None: lk = (lk[0], lk[1] * KI, lk[2])

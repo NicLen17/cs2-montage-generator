@@ -314,7 +314,19 @@ def build(edit, project):
               'boundaries', 'KILL_FX'):
         setattr(ns, k, loc[k])
     ns.SONG_TITLE = str(song.get('title', '')).upper()
-    ns.SYNC = list(song.get('sync', []))
+    # Momentos de sincronía: los que fija el edit (song.sync) o, si no dice nada, los que analyze_song.py encontró solo
+    # (song.json: aciertan el beat exacto 4 de cada 5 veces, por eso check_kills los trata como avisos).
+    info = json.load(open(J('song.json'), encoding='utf-8')) if os.path.exists(J('song.json')) else {}
+    if 'sync' in song:
+        ns.SYNC = list(song['sync']); ns.SYNC_AUTO = False
+    else:
+        skip = song.get('sync_skip', [])
+        ns.SYNC = [t for t in info.get('sync', []) if SONG_A0 <= t <= SONG_A0 + TOTAL - OUTRO_LEN
+                   and not any(abs(t - x) < 0.3 for x in skip)]
+        ns.SYNC_AUTO = True
+    # energía de la canción (0-1) en cada kill: el render puede seguirla con la fuerza del efecto (kill_fx.energy_follow)
+    eb = info.get('energy_beats')
+    ns.KILL_ENERGY = ([float(eb[min(len(eb) - 1, int(np.argmin(abs(grid - (k + SONG_A0)))))]) for k in kills] if eb else None)
     ns.FRANTIC = [tuple(x) for x in song.get('frantic', [])]
     ns.SLOWMO_SRC = {int(k): tuple(v) for k, v in edit.get('slowmo_src', {}).items()}
     for k, v in edit.get('audio', {}).items():

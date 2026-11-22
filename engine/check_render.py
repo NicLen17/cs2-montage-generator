@@ -68,7 +68,9 @@ def main():
     I = [l for l in r.splitlines() if l.strip().startswith('I:')]; P = [l for l in r.splitlines() if l.strip().startswith('Peak:')]
     if I and P:
         lufs = float(I[-1].split()[1]); peak = float(P[-1].split()[1])
-        print(f'Volumen: {lufs:.1f} LUFS, pico {peak:.1f} dBFS'
+        import preset
+        tgt = preset.for_plan(p)['audio']['loudness']['target_lufs']
+        print(f'Volumen: {lufs:.1f} LUFS, pico {peak:.1f} dBFS' + (f' (objetivo del preset: {tgt:g} LUFS)' if tgt is not None else '')
               + ('  → pico alto: bajá el audio con ffmpeg -c:v copy -af volume=-1.2dB' if peak > -1.0 else ''))
 
 

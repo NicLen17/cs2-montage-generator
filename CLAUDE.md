@@ -102,6 +102,11 @@ El edit en sí sigue el skill **del proyecto** `.claude/skills/cs2-edit/SKILL.md
 - **Un edit puede ser datos**: `projects/<nombre>/edit.json` (formato en `docs/edit-json.md`); el timeline lo arma
   `engine/planner.py`. Los proyectos con `plan.py` siguen andando igual (`engine/project.py` carga cualquiera de los dos;
   si están los dos manda `edit.json`). `python engine/migrate.py projects/<nombre>` pasa un plan viejo y comprueba que dé lo mismo.
+- **Canción (Fase 2):** `analyze_song.py` deja además `song.json` (tempo por tramo si la canción cambia de tempo, energía por
+  sección, sugerencia de arranque y de los dos drops, y `sync`: los momentos que entran solos como SYNC cuando `edit.json`
+  no trae `song.sync`; aciertan el beat exacto 4 de cada 5 veces, así que `check_kills.py` los muestra como avisos y hay que
+  confirmarlos a oído) y `vocal_hits.json`. `python engine/words.py projects/<nombre>` (opcional, faster-whisper) da el
+  tiempo de cada palabra para ubicar golpes de voz; **no** detecta sílabas recortadas y nunca se usa para poner letra en pantalla.
 - **Antes y después de tocar el motor:** `python -m pytest` (rápido) y `python engine/regress.py projects/my_jealousy_v3`
   (imagen contra la referencia; `--device gpu` y `--cross` para CPU vs GPU). `python -m pytest --slow` suma el detector de
   kills (F1 contra el catálogo) y la regresión de imagen.

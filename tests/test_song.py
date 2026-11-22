@@ -65,3 +65,38 @@ def test_pick_sync_va_al_beat_que_suena_con_todo():
     out = analyze_song.pick_sync([dict(t=9.5, fuerza=12.0, tipo='sube')], [0.0], grid, lv, bs)
     assert out == [10.0]
     assert analyze_song.pick_sync([dict(t=9.5, fuerza=3.0, tipo='voz')], [0.0], grid, lv, bs) == []
+
+
+def test_golpes_de_voz():
+    import words
+    W = [dict(t0=1.0, t1=1.4, w='hey'), dict(t0=1.5, t1=1.9, w='you'),
+         dict(t0=4.0, t1=4.3, w='Stop'),                                            # aislada: 2.1 s de silencio antes
+         dict(t0=6.0, t1=6.2, w='go'), dict(t0=6.4, t1=6.6, w='Go,'), dict(t0=6.8, t1=7.0, w='go')]
+    acc = words.accents(W)
+    assert any(a['w'] == 'Stop' and a['why'] == 'palabra aislada' for a in acc)
+    rep = [a for a in acc if a['why'].startswith('repetida')]
+    assert rep and rep[0]['times'] == [6.0, 6.4, 6.8]
+
+
+def test_sync_automatico_y_energia_en_el_plan(tmp_path):
+    """Sin song.sync en edit.json, el planificador toma los momentos de song.json; con song.sync, manda el edit."""
+    import shutil, migrate, planner
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = os.path.join(root, 'projects', 'my_jealousy_v3')
+    if not os.path.exists(os.path.join(src, 'plan.py')):
+        pytest.skip('sin el proyecto de ejemplo')
+    for f in ('grid.npy', 'hits.npy', 'shots.json'):
+        shutil.copy(os.path.join(src, f), tmp_path / f)
+    edit = migrate.migrate(src)[0]
+    grid = np.load(tmp_path / 'grid.npy')
+    t_sync = float(grid[40]); n = len(grid) - 1
+    json.dump(dict(sync=[t_sync, 1.0, 9999.0], energy_beats=[0.2] * 60 + [0.9] * (n - 60)), open(tmp_path / 'song.json', 'w'))
+    edit['song'].pop('sync', None)
+    p = planner.build(edit, str(tmp_path))
+    assert p.SYNC == [t_sync] and p.SYNC_AUTO                    # fuera del video: no cuentan
+    assert len(p.KILL_ENERGY) == len(p.kills) and min(p.KILL_ENERGY) == 0.2 and max(p.KILL_ENERGY) == 0.9
+    edit['song']['sync_skip'] = [t_sync]
+    assert planner.build(edit, str(tmp_path)).SYNC == []
+    edit['song']['sync'] = [50.0]
+    p = planner.build(edit, str(tmp_path))
+    assert p.SYNC == [50.0] and not p.SYNC_AUTO

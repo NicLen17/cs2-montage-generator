@@ -40,6 +40,7 @@
   "rotation": ["bloom", "chroma_zoom", "shake_blur", "flash", "radial_zoom", "pop"],
   "intensity": 1.0,
   "decay": 0.11,
+  "energy_follow": 0.0,
   "ace_tints": ["#78DCFF", "#FF78E6", "#FFD278", "#C8A0FF", "#DCF0FF"]
  },
  "cuts": {
@@ -66,7 +67,7 @@
   "react_hold": 0.6,
   "react_release": 0.5,
   "react_kinds": ["grupal"],
-  "loudness": {"target_lufs": null, "true_peak": -1.5}
+  "loudness": {"target_lufs": null, "shorts_lufs": null, "true_peak": -1.5}
  },
  "output": {
   "bitrate": 30

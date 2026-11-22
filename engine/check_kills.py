@@ -257,14 +257,20 @@ def main():
     print()
     # SYNC del plan (momentos de la canción con buen ritmo: drops, vuelta del bombo, estribillos; analyze_song.py los
     # propone): cada uno tiene que tener una kill exacta. En "Faster N Harder" el drop de 1:12 quedó sonando sin nada.
+    sync_warn = []
     for st in getattr(p, 'SYNC', []):
         o = st - p.SONG_A0
         d = min((abs(k - o) for k in p.kills), default=99.0)
         if d > 0.035:
-            problems.append(f'SINCRONÍA: el momento {st:.2f}s de la canción (video {o:.2f}s) no tiene una kill exacta '
-                            f'(la más cercana está a {d:.2f}s) → anclá una buena kill ahí con kill_at / kill_at_seg')
+            msg = (f'SINCRONÍA: el momento {st:.2f}s de la canción (video {o:.2f}s) no tiene una kill exacta '
+                   f'(la más cercana está a {d:.2f}s) → anclá una buena kill ahí con kill_at / kill_at_seg')
+            # los que analyze_song.py eligió solo pueden estar un beat corridos: avisan, no frenan
+            (sync_warn if getattr(p, 'SYNC_AUTO', False) else problems).append(msg)
     if getattr(p, 'SYNC', None):
         print(f"Momentos de sincronía del plan: {len(p.SYNC)} ({', '.join(f'{x:.2f}' for x in p.SYNC)})")
+    if sync_warn:
+        print(f'{len(sync_warn)} aviso(s) de sincronía (momentos elegidos solos por analyze_song.py; confirmá el beat a oído y '
+              f'fijalos en song.sync, o sacalos con song.sync_skip):'); [print('  -', x) for x in sync_warn]
     if problems:
         print(f'{len(problems)} problema(s):'); [print('  -', x) for x in problems]
     else:

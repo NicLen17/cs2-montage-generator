@@ -83,6 +83,20 @@ def candidates(p, dur):
     return sorted(out, key=lambda c: -c['score'])
 
 
+def _loud(p, video, t0, D):
+    """Filtro de volumen para llevar el short al loudness de redes (preset: audio.loudness.shorts_lufs). Sin objetivo,
+    el short sale con el volumen del edit largo."""
+    import preset, re
+    L = preset.for_plan(p)['audio']['loudness']; tgt = L.get('shorts_lufs')
+    if tgt is None: return ''
+    r = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-ss', f'{t0:.3f}', '-t', f'{D:.3f}', '-i', video, '-vn',
+                        '-af', 'ebur128=peak=true', '-f', 'null', '-'], capture_output=True, text=True, errors='replace').stderr
+    I = re.findall(r'I:\s+(-?[\d.]+) LUFS', r); P = re.findall(r'Peak:\s+(-?[\d.]+)', r)
+    if not I or not P: return ''
+    g = min(float(tgt) - float(I[-1]), -1.0 - float(P[-1]))       # nunca por encima de -1 dB de pico
+    return f',volume={g:.2f}dB' if abs(g) > 0.1 else ''
+
+
 def _channel(p):
     import preset
     return preset.for_plan(p)['channel']
@@ -182,7 +196,7 @@ def render_short(p, project, video, t0, t1, layout, text, out, sheet):
     fc += f',fade=t=in:st=0:d=0.2,fade=t=out:st={fo:.3f}:d=1.0,format=yuv420p[v]'
     cmd = ['ffmpeg', '-v', 'error', '-y', '-ss', f'{t0:.3f}', '-t', f'{D:.3f}', '-i', video, '-loop', '1', '-i', ov,
            '-filter_complex', fc, '-map', '[v]', '-map', '0:a',
-           '-af', f'afade=t=in:st=0:d=0.25,afade=t=out:st={fo:.3f}:d=1.0',
+           '-af', f'afade=t=in:st=0:d=0.25,afade=t=out:st={fo:.3f}:d=1.0' + _loud(p, video, t0, D),
            *video_encoder_args('final', 16), '-r', str(p.FPS), '-c:a', 'aac', '-b:a', '256k', '-shortest', '-movflags', '+faststart', out]
     r = subprocess.run(cmd)
     os.remove(ov)

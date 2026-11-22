@@ -26,6 +26,19 @@ REACT_HOLD = globals().get('REACT_HOLD', _A['react_hold'])                      
 REACT_RELEASE = globals().get('REACT_RELEASE', _A['react_release'])                     # y vuelve a su nivel en este tiempo (curva suave)
 REACT_KINDS = globals().get('REACT_KINDS', tuple(_A['react_kinds']))                 # solo reacciones grupales (pedido del 20/11/2026)
 OUT_WAV = os.environ.get('WAKO_AUDIO_OUT', 'work_audio.wav')
+LUFS_TARGET = _A['loudness']['target_lufs']       # None: tan fuerte como deje el pico (el sonido de siempre, ~-10 LUFS)
+TP_LIMIT = float(_A['loudness']['true_peak'])     # techo del pico real, en dBTP
+
+
+def _lufs(x):
+    """Loudness integrado (EBU R128) de una mezcla estéreo en memoria, medido con ffmpeg."""
+    import re
+    r = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', '-af', 'ebur128',
+                        '-f', 'null', '-'], input=(np.clip(x / max(1.0, np.abs(x).max()), -1, 1) * 32767).astype(np.int16).tobytes(),
+                       capture_output=True).stderr.decode('utf-8', 'replace')
+    m = re.findall(r'I:\s+(-?[\d.]+) LUFS', r)
+    if not m: return None
+    return float(m[-1]) + 20 * np.log10(max(1.0, np.abs(x).max()))
 
 
 _DEC = {}
@@ -248,7 +261,13 @@ else:
     # los tiros más fuertes dejan picos entre muestras: se normaliza al pico real (sobremuestreado 4x) en -1.5 dBTP
     from scipy.signal import resample_poly
     tp = max(np.abs(resample_poly(mix[:, ch], 4, 1)).max() for ch in (0, 1))
-    mix *= 10 ** (-1.5 / 20) / tp
+    if LUFS_TARGET is None:
+        mix *= 10 ** (TP_LIMIT / 20) / tp
+    else:
+        # objetivo de loudness (EBU R128): se lleva la mezcla a ese nivel y el pico real solo puede bajarla, nunca subirla
+        lufs_in = _lufs(mix)
+        g = 10 ** ((LUFS_TARGET - lufs_in) / 20) if lufs_in is not None else 10 ** (TP_LIMIT / 20) / tp
+        mix *= min(g, 10 ** (TP_LIMIT / 20) / tp)
     # el AAC del video final agrega ~1.5 dB de pico en los tiros: se codifica una prueba, se mide y se corrige
     import tempfile, re
     for _ in range(2):
@@ -280,6 +299,7 @@ for k in globals().get('kills', []):
 if sh:
     sh = np.array(sh)
     lines.append(f'tiro de cada kill sobre la música: mediana {np.median(sh):+.1f} dB, el más bajo {sh.min():+.1f} dB ({len(sh)} kills)')
+lines += [f'loudness: {_lufs(mix):.1f} LUFS' + (f' (objetivo {LUFS_TARGET:g})' if LUFS_TARGET is not None else ' (sin objetivo: lo que deja el pico)')]
 lines += [f'reacciones resaltadas: {sum("->" in r for r in rlog)}'] + ['  ' + r for r in rlog]
 open(os.environ.get('WAKO_AUDIO_LOG', 'audio_balance.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 try: sys.stdout.reconfigure(encoding='utf-8')
